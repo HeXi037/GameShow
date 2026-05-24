@@ -6,6 +6,7 @@ function initializeGame({ playerNames, boardData, topFinalists = 2 }) {
     players,
     boardData,
     revealedClue: null,
+    buzz: null,
     quickMoney: {
       finalists: [],
       currentFinalistIndex: 0,
@@ -47,7 +48,14 @@ function selectClue(state, categoryIndex, clueIndex) {
   return {
     state: {
       ...state,
-      revealedClue: { ...clue, categoryIndex: Number(categoryIndex), clueIndex: Number(clueIndex), isMogulMultiplier }
+      revealedClue: { ...clue, categoryIndex: Number(categoryIndex), clueIndex: Number(clueIndex), isMogulMultiplier },
+      buzz: {
+        open: false,
+        lockedBy: null,
+        lockedAt: null,
+        attempts: [],
+        eligiblePlayers: state.players.map((player) => player.name)
+      }
     }
   };
 }
@@ -82,7 +90,7 @@ function scoreClue(state, playerResults = {}) {
     return player;
   });
 
-  let nextState = { ...state, players: sortPlayers(players), revealedClue: null };
+  let nextState = { ...state, players: sortPlayers(players), revealedClue: null, buzz: null };
 
   if (allCluesUsed(nextState)) {
     if (nextState.round === 1) {
@@ -114,7 +122,7 @@ function applyMultiplier(state, { playerName, wager, correct }) {
     return { ...p, score: p.score + (correct === 'true' || correct === true ? amount : -amount) };
   });
 
-  let nextState = { ...state, players: sortPlayers(players), revealedClue: null };
+  let nextState = { ...state, players: sortPlayers(players), revealedClue: null, buzz: null };
   if (allCluesUsed(nextState)) {
     nextState = initializeQuickMoney({ ...nextState, phase: 'quickMoney' });
   }
@@ -169,4 +177,31 @@ function advanceQuickMoney(state, { playerName, promptIndex, answer, points }) {
   return { state: { ...state, players: updatedPlayers, quickMoney } };
 }
 
-module.exports = { initializeGame, selectClue, scoreClue, applyMultiplier, advanceQuickMoney, initializeQuickMoney, allCluesUsed };
+
+function openBuzz(state) {
+  if (!state.revealedClue) return { state, error: 'No active clue.' };
+  if (!state.buzz) return { state, error: 'Buzz state is not initialized for this clue.' };
+  return { state: { ...state, buzz: { ...state.buzz, open: true } } };
+}
+
+function lockBuzz(state, playerName, at = Date.now()) {
+  if (!state.revealedClue) return { state, error: 'No active clue.' };
+  if (!state.buzz || !state.buzz.open) return { state, error: 'Buzz window is closed.' };
+  if (state.buzz.lockedBy) return { state, error: 'Buzz already locked.' };
+  if (!state.players.some((player) => player.name === playerName)) return { state, error: 'Unknown player.' };
+
+  return {
+    state: {
+      ...state,
+      buzz: {
+        ...state.buzz,
+        open: false,
+        lockedBy: playerName,
+        lockedAt: Number(at) || Date.now(),
+        attempts: [...(state.buzz.attempts || []), { playerName, at: Number(at) || Date.now() }]
+      }
+    }
+  };
+}
+
+module.exports = { initializeGame, selectClue, scoreClue, applyMultiplier, advanceQuickMoney, initializeQuickMoney, allCluesUsed, openBuzz, lockBuzz };

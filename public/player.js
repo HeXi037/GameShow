@@ -32,11 +32,18 @@ function renderState(state) {
     ? `Current clue: ${state.revealedClue.answer}`
     : 'Current clue: None';
 
-  const canBuzz = Boolean(state.revealedClue) && state.phase !== 'quickMoney';
+  const buzz = state.buzz || { open: false, lockedBy: null };
+  const canBuzz = Boolean(state.revealedClue) && state.phase !== 'quickMoney' && buzz.open && !buzz.lockedBy;
   buzzButton.disabled = !canBuzz;
-  buzzInfo.textContent = canBuzz
-    ? 'Buzzing is enabled for this clue.'
-    : 'Buzzing is disabled until a clue is revealed.';
+  if (!state.revealedClue || state.phase === 'quickMoney') {
+    buzzInfo.textContent = 'Buzzing is disabled until a clue is revealed.';
+  } else if (buzz.lockedBy) {
+    buzzInfo.textContent = `Buzz locked by ${buzz.lockedBy}.`;
+  } else if (!buzz.open) {
+    buzzInfo.textContent = 'Waiting for host to open buzzing.';
+  } else {
+    buzzInfo.textContent = 'Buzzing is enabled for this clue.';
+  }
 
   renderPlayerOptions(state);
 }

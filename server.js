@@ -5,6 +5,7 @@ const http = require('http');
 const multer = require('multer');
 const session = require('express-session');
 const { Server } = require('socket.io');
+const { initializeGame, selectClue, scoreClue, applyMultiplier, advanceQuickMoney } = require('./src/gameState');
 
 const app = express();
 const server = http.createServer(app);
@@ -228,15 +229,6 @@ function getRoundBoard(round) {
   return round === 1 ? gameState.boardData.round1 : gameState.boardData.round2;
 }
 
-function sortPlayers() {
-  gameState.players.sort((a, b) => b.score - a.score);
-}
-
-function allCluesUsed(round) {
-  const board = getRoundBoard(round);
-  return board.categories.every((cat) => cat.clues.every((clue) => clue.used));
-}
-
 function publicState() {
   return {
     phase: gameState.phase,
@@ -340,11 +332,7 @@ app.post('/host/setup', requireHost, upload.single('boardFile'), (req, res) => {
 
     initializeBoardState(boardData);
 
-    gameState = emptyState();
-    gameState.phase = 'round1';
-    gameState.round = 1;
-    gameState.players = names.map((name) => ({ name, score: 0 }));
-    gameState.boardData = boardData;
+    gameState = initializeGame({ playerNames: names, boardData });
 
     io.emit('state:update', publicState());
     res.redirect('/host');
@@ -371,16 +359,8 @@ app.post('/host/select-clue', requireHost, (req, res) => {
   if (!clue) return res.status(404).send('Clue not found.');
   if (clue.used) return res.status(400).send('Clue already used.');
 
-  let isMogulMultiplier = false;
-  if (gameState.round === 2) {
-    const multiplier = gameState.boardData.round2?.mogulMultiplier;
-    isMogulMultiplier =
-      Number(multiplier?.categoryIndex) == parsedCategoryIndex &&
-      Number(multiplier?.clueIndex) == parsedClueIndex;
-  }
-
-  clue.used = true;
-  gameState.revealedClue = { ...clue, categoryIndex: parsedCategoryIndex, clueIndex: parsedClueIndex, isMogulMultiplier };
+  const selected = selectClue(gameState, { categoryIndex: parsedCategoryIndex, clueIndex: parsedClueIndex });
+  if (!selected.ok) return res.status(400).send(selected.error);
   io.emit('state:update', publicState());
   res.sendStatus(200);
 });
@@ -392,27 +372,8 @@ app.post('/host/score-clue', requireHost, (req, res) => {
     return res.status(400).send('Use multiplier scoring for this clue.');
   }
 
-  const clueValue = Number(gameState.revealedClue.value);
-  Object.entries(playerResults || {}).forEach(([name, result]) => {
-    const player = gameState.players.find((p) => p.name === name);
-    if (!player || result === 'skip') return;
-    if (result === 'correct') player.score += clueValue;
-    if (result === 'incorrect') player.score -= clueValue;
-  });
-
-  sortPlayers();
-  gameState.revealedClue = null;
-
-  if (allCluesUsed(gameState.round)) {
-    if (gameState.round === 1) {
-      gameState.round = 2;
-      gameState.phase = 'round2';
-    } else {
-      gameState.phase = 'quickMoney';
-      gameState.quickMoney.finalists = [...gameState.players].slice(0, 2).map((p) => p.name);
-      gameState.quickMoney.active = true;
-    }
-  }
+  const scored = scoreClue(gameState, { playerResults });
+  if (!scored.ok) return res.status(400).send(scored.error);
 
   io.emit('state:update', publicState());
   res.sendStatus(200);
@@ -425,25 +386,8 @@ app.post('/host/mogul-multiplier', requireHost, (req, res) => {
     return res.status(400).send('Mogul Multiplier is not active.');
   }
 
-  const matches = gameState.players.filter((p) => p.name === playerName);
-  if (matches.length !== 1) return res.status(400).send('Wager must target exactly one valid player.');
-
-  const amount = Number(wager);
-  if (!Number.isFinite(amount) || amount < 0) return res.status(400).send('Wager must be a non-negative number.');
-
-  const player = matches[0];
-  const maxWager = Math.max(0, Number(player.score));
-  if (amount > maxWager) return res.status(400).send('Wager cannot exceed player score.');
-
-  player.score += correct === 'true' ? amount : -amount;
-  sortPlayers();
-  gameState.revealedClue = null;
-
-  if (allCluesUsed(gameState.round)) {
-    gameState.phase = 'quickMoney';
-    gameState.quickMoney.finalists = [...gameState.players].slice(0, 2).map((p) => p.name);
-    gameState.quickMoney.active = true;
-  }
+  const applied = applyMultiplier(gameState, { playerName, wager, correct });
+  if (!applied.ok) return res.status(400).send(applied.error);
 
   io.emit('state:update', publicState());
   res.sendStatus(200);
@@ -458,12 +402,7 @@ app.post('/host/quick-money/start-turn', requireHost, (req, res) => {
 
 app.post('/host/quick-money/submit', requireHost, (req, res) => {
   const { playerName, promptIndex, answer, points } = req.body;
-  if (!gameState.quickMoney.answers[playerName]) gameState.quickMoney.answers[playerName] = [];
-  gameState.quickMoney.answers[playerName].push({ promptIndex: Number(promptIndex), answer, points: Number(points) });
-
-  const player = gameState.players.find((p) => p.name === playerName);
-  if (player) player.score += Number(points);
-  sortPlayers();
+  advanceQuickMoney(gameState, { playerName, promptIndex, answer, points });
 
   io.emit('state:update', publicState());
   res.sendStatus(200);

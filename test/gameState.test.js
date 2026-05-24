@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { initializeGame, selectClue, scoreClue, applyMultiplier, advanceQuickMoney } = require('../src/gameState');
+const { initializeGame, selectClue, scoreClue, applyMultiplier, advanceQuickMoney, openBuzz, lockBuzz, applyScoreAndBuzzRules, updateConfig } = require('../src/gameState');
 
 function makeBoard() {
   const makeRound = (values) => ({
@@ -91,4 +91,26 @@ test('Quick Money ordering and completion', () => {
     state = advanceQuickMoney(state, { playerName: 'B', promptIndex: i, answer: 'y', points: 5 }).state;
     if (i === 4) assert.equal(state.quickMoney.completed, true);
   }
+});
+
+
+test('incorrect answer reopens buzz when configured', () => {
+  let state = initializeGame({ playerNames: ['A', 'B'], boardData: makeBoard() });
+  state = selectClue(state, 0, 0).state;
+  state = openBuzz(state).state;
+  state = lockBuzz(state, 'A').state;
+  state = applyScoreAndBuzzRules(state, { A: 'incorrect' }).state;
+  assert.equal(state.revealedClue.value, 100);
+  assert.equal(state.buzz.open, true);
+  assert.equal(state.buzz.lockedBy, null);
+});
+
+test('maxAttemptsPerClue enforces clue close after configured attempts', () => {
+  let state = initializeGame({ playerNames: ['A', 'B'], boardData: makeBoard() });
+  state = updateConfig(state, { maxAttemptsPerClue: 1, reopenOnIncorrect: true });
+  state = selectClue(state, 0, 0).state;
+  state = openBuzz(state).state;
+  state = lockBuzz(state, 'A').state;
+  state = applyScoreAndBuzzRules(state, { A: 'incorrect' }).state;
+  assert.equal(state.revealedClue, null);
 });

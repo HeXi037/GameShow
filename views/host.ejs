@@ -39,7 +39,20 @@
         <div id="joinLinks"></div>
       </div>
 
+      
       <div class="card">
+        <h3>Rule Configuration</h3>
+        <form id="rulesForm">
+          <label><input type="checkbox" name="reopenOnIncorrect" /> Reopen buzz automatically when locked player is scored incorrect</label>
+          <label><input type="checkbox" name="allowRebuzzBySamePlayer" /> Allow same player to rebuzz on same clue</label>
+          <label>Max attempts per clue (blank = unlimited)</label>
+          <input name="maxAttemptsPerClue" type="number" min="1" />
+          <label>Buzz timeout seconds (0 disables timeout)</label>
+          <input name="buzzTimeoutSeconds" type="number" min="0" value="0" />
+          <button type="submit">Save Rules</button>
+        </form>
+      </div>
+<div class="card">
         <h3>Revealed Answer, Buzz Controls, and Scoring</h3>
         <div id="hostReveal"></div>
       </div>

@@ -60,13 +60,39 @@ document.getElementById('quickSubmit').addEventListener('submit', async (e) => {
   await post('/host/quick-money/submit', data);
 });
 
+
+function renderQuickMoneyStatus() {
+  const el = document.getElementById('quickMoneyStatus');
+  if (!el) return;
+  if (state.phase !== 'quickMoney') {
+    el.innerHTML = '<p>Quick Money has not started yet.</p>';
+    return;
+  }
+
+  const prompts = state.quickMoneyPrompts || [];
+  const qm = state.quickMoney || {};
+  const finalist = (qm.finalists || [])[qm.currentFinalistIndex] || '—';
+  const promptText = prompts[qm.promptIndex] || '—';
+  const timer = qm.timerEndsAt ? Math.max(0, Math.ceil((qm.timerEndsAt - Date.now()) / 1000)) : null;
+
+  el.innerHTML = `
+    <p><b>Current finalist:</b> ${finalist}</p>
+    <p><b>Prompt ${Number(qm.promptIndex || 0) + 1}:</b> ${promptText}</p>
+    <p><b>Turn active:</b> ${qm.turnActive ? 'Yes' : 'No'}</p>
+    <p><b>Timer:</b> ${timer === null ? 'Not running' : `${timer}s`}</p>
+  `;
+}
 socket.on('state:update', (next) => {
   state = next;
   renderScoreboard(state.players || []);
   renderHostBoard();
   renderReveal();
+  renderQuickMoneyStatus();
 });
 
 renderScoreboard(state.players || []);
 renderHostBoard();
 renderReveal();
+
+setInterval(renderQuickMoneyStatus, 250);
+renderQuickMoneyStatus();

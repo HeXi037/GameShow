@@ -26,7 +26,30 @@ function renderBoard(state) {
   revealed.innerHTML = state.revealedClue ? `<h3>Answer</h3><p>${state.revealedClue.answer}</p>` : '';
 }
 
+function renderQuickMoneyPanel(state) {
+  const panel = document.getElementById('quickMoneyPanel');
+  if (!panel) return;
+  if (state.phase !== 'quickMoney') {
+    panel.innerHTML = '';
+    return;
+  }
+
+  const qm = state.quickMoney || {};
+  const prompts = state.quickMoneyPrompts || [];
+  const finalist = (qm.finalists || [])[qm.currentFinalistIndex] || '—';
+  const promptNum = Number(qm.promptIndex || 0) + 1;
+  const promptText = prompts[qm.promptIndex] || '—';
+
+  panel.innerHTML = `
+    <h3>Quick Money</h3>
+    <p><b>Active finalist:</b> ${finalist}</p>
+    <p><b>Prompt ${promptNum} of 5:</b> ${promptText}</p>
+    <p><b>Answer reveal:</b> Masked until host scoring (policy enabled).</p>
+  `;
+}
+
 socket.on('state:update', (state) => {
   renderScoreboard(state.players || []);
   renderBoard(state);
+  renderQuickMoneyPanel(state);
 });

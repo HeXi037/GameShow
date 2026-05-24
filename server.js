@@ -12,6 +12,8 @@ const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
 const HOST_PASSWORD = process.env.HOST_PASSWORD || 'mogulhost';
+const QUICK_MONEY_FINALIST_COUNT = Number(process.env.QUICK_MONEY_FINALIST_COUNT || 2);
+const QUICK_MONEY_PROMPT_COUNT = 5;
 const upload = multer({ dest: path.join(__dirname, 'uploads') });
 
 app.set('view engine', 'ejs');
@@ -39,7 +41,7 @@ const emptyState = () => ({
     promptIndex: 0,
     answers: {},
     timerEndsAt: null,
-    active: false,
+    turnActive: false,
     completed: false
   }
 });
@@ -90,7 +92,8 @@ function publicState() {
     players: gameState.players,
     board: gameState.boardData ? getRoundBoard(gameState.round) : null,
     revealedClue: gameState.revealedClue,
-    quickMoney: gameState.quickMoney
+    quickMoney: gameState.quickMoney,
+    quickMoneyPrompts: gameState.boardData ? gameState.boardData.quickMoneyPrompts : []
   };
 }
 
@@ -173,8 +176,15 @@ app.post('/host/score-clue', requireHost, (req, res) => {
       gameState.phase = 'round2';
     } else {
       gameState.phase = 'quickMoney';
-      gameState.quickMoney.finalists = [...gameState.players].slice(0, 2).map((p) => p.name);
-      gameState.quickMoney.active = true;
+      gameState.quickMoney.finalists = [...gameState.players]
+        .slice(0, QUICK_MONEY_FINALIST_COUNT)
+        .map((p) => p.name);
+      gameState.quickMoney.currentFinalistIndex = 0;
+      gameState.quickMoney.promptIndex = 0;
+      gameState.quickMoney.turnActive = false;
+      gameState.quickMoney.completed = false;
+      gameState.quickMoney.answers = {};
+      gameState.quickMoney.timerEndsAt = null;
     }
   }
 
@@ -195,20 +205,53 @@ app.post('/host/mogul-multiplier', requireHost, (req, res) => {
 });
 
 app.post('/host/quick-money/start-turn', requireHost, (req, res) => {
+  if (gameState.phase !== 'quickMoney' || gameState.quickMoney.completed) {
+    return res.status(400).send('Quick Money is not active.');
+  }
   const { seconds } = req.body;
   gameState.quickMoney.timerEndsAt = Date.now() + Number(seconds || 20) * 1000;
+  gameState.quickMoney.turnActive = true;
   io.emit('state:update', publicState());
   res.sendStatus(200);
 });
 
 app.post('/host/quick-money/submit', requireHost, (req, res) => {
+  if (gameState.phase !== 'quickMoney' || gameState.quickMoney.completed) {
+    return res.status(400).send('Quick Money is not active.');
+  }
+
   const { playerName, promptIndex, answer, points } = req.body;
+  const currentFinalist = gameState.quickMoney.finalists[gameState.quickMoney.currentFinalistIndex];
+  const expectedPromptIndex = gameState.quickMoney.promptIndex;
+  const submittedPromptIndex = Number(promptIndex);
+
+  if (!gameState.quickMoney.turnActive) return res.status(400).send('No active Quick Money turn.');
+  if (playerName !== currentFinalist) return res.status(400).send('Out-of-order submission: wrong finalist.');
+  if (submittedPromptIndex !== expectedPromptIndex) return res.status(400).send('Out-of-order submission: wrong prompt index.');
+
   if (!gameState.quickMoney.answers[playerName]) gameState.quickMoney.answers[playerName] = [];
-  gameState.quickMoney.answers[playerName].push({ promptIndex: Number(promptIndex), answer, points: Number(points) });
+  const alreadyAnswered = gameState.quickMoney.answers[playerName].some((entry) => entry.promptIndex === submittedPromptIndex);
+  if (alreadyAnswered) return res.status(400).send('Duplicate submission for this prompt.');
+
+  gameState.quickMoney.answers[playerName].push({ promptIndex: submittedPromptIndex, answer, points: Number(points) });
 
   const player = gameState.players.find((p) => p.name === playerName);
   if (player) player.score += Number(points);
   sortPlayers();
+
+  gameState.quickMoney.promptIndex += 1;
+  if (gameState.quickMoney.promptIndex >= QUICK_MONEY_PROMPT_COUNT) {
+    gameState.quickMoney.promptIndex = 0;
+    gameState.quickMoney.currentFinalistIndex += 1;
+    gameState.quickMoney.turnActive = false;
+    gameState.quickMoney.timerEndsAt = null;
+  }
+
+  if (gameState.quickMoney.currentFinalistIndex >= gameState.quickMoney.finalists.length) {
+    gameState.quickMoney.completed = true;
+    gameState.quickMoney.turnActive = false;
+    gameState.quickMoney.timerEndsAt = null;
+  }
 
   io.emit('state:update', publicState());
   res.sendStatus(200);

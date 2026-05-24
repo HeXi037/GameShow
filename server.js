@@ -11,7 +11,12 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
-const HOST_PASSWORD = process.env.HOST_PASSWORD || 'mogulhost';
+const isDevelopment = process.env.NODE_ENV === 'development';
+const HOST_PASSWORD = process.env.HOST_PASSWORD || (isDevelopment ? 'mogulhost' : null);
+
+if (!HOST_PASSWORD) {
+  throw new Error('HOST_PASSWORD environment variable is required when NODE_ENV is not development.');
+}
 const upload = multer({ dest: path.join(__dirname, 'uploads') });
 
 app.set('view engine', 'ejs');
@@ -19,11 +24,18 @@ app.set('views', path.join(__dirname, 'views'));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+app.set('trust proxy', 1);
+
 app.use(
   session({
     secret: process.env.SESSION_SECRET || 'mogul-money-secret',
     resave: false,
-    saveUninitialized: false
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.COOKIE_SECURE === 'true'
+    }
   })
 );
 
@@ -214,6 +226,34 @@ function publicState() {
   };
 }
 
+
+const loginAttempts = new Map();
+const LOGIN_WINDOW_MS = 10 * 60 * 1000;
+const MAX_LOGIN_ATTEMPTS = 5;
+
+function clientAddress(req) {
+  return req.ip || req.connection.remoteAddress || 'unknown';
+}
+
+function isRateLimited(req) {
+  const now = Date.now();
+  const key = clientAddress(req);
+  const attempts = (loginAttempts.get(key) || []).filter((ts) => now - ts < LOGIN_WINDOW_MS);
+  loginAttempts.set(key, attempts);
+  return attempts.length >= MAX_LOGIN_ATTEMPTS;
+}
+
+function registerFailedLogin(req) {
+  const key = clientAddress(req);
+  const attempts = loginAttempts.get(key) || [];
+  attempts.push(Date.now());
+  loginAttempts.set(key, attempts);
+}
+
+function clearLoginAttempts(req) {
+  loginAttempts.delete(clientAddress(req));
+}
+
 function requireHost(req, res, next) {
   if (!req.session.isHost) return res.redirect('/host/login');
   next();
@@ -222,13 +262,31 @@ function requireHost(req, res, next) {
 app.get('/', (req, res) => res.render('index'));
 app.get('/host/login', (req, res) => res.render('login', { error: null }));
 
-app.post('/host/login', (req, res) => {
+app.post('/host/login', (req, res, next) => {
+  if (isRateLimited(req)) {
+    return res.status(429).render('login', { error: 'Too many login attempts. Please try again later.' });
+  }
+
   const { password } = req.body;
   if (password === HOST_PASSWORD) {
-    req.session.isHost = true;
-    return res.redirect('/host');
+    clearLoginAttempts(req);
+    return req.session.regenerate((err) => {
+      if (err) return next(err);
+      req.session.isHost = true;
+      return res.redirect('/host');
+    });
   }
+
+  registerFailedLogin(req);
   return res.status(401).render('login', { error: 'Invalid password.' });
+});
+
+app.post('/host/logout', requireHost, (req, res, next) => {
+  req.session.destroy((err) => {
+    if (err) return next(err);
+    res.clearCookie('connect.sid');
+    return res.redirect('/host/login');
+  });
 });
 
 app.get('/host', requireHost, (req, res) => {

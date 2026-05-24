@@ -1,7 +1,7 @@
 let socket = null;
 let currentState = null;
 
-const playerNameSelect = document.getElementById('playerName');
+const joinCodeInput = document.getElementById('joinCode');
 const connectButton = document.getElementById('connectButton');
 const playerConnectionStatus = document.getElementById('playerConnectionStatus');
 const selectedPlayer = document.getElementById('selectedPlayer');
@@ -15,11 +15,6 @@ async function fetchState() {
   return response.json();
 }
 
-function renderPlayerOptions(state) {
-  const players = state.players || [];
-  playerNameSelect.innerHTML = players.map((p) => `<option value="${p.name}">${p.name}</option>`).join('');
-}
-
 function setConnectionStatus(text, online) {
   playerConnectionStatus.textContent = text;
   playerConnectionStatus.dataset.online = online ? 'true' : 'false';
@@ -27,6 +22,11 @@ function setConnectionStatus(text, online) {
 
 function renderState(state) {
   currentState = state;
+  const joinCode = (joinCodeInput.value || '').trim().toUpperCase();
+  if (joinCode && state.joinCodes) {
+    const matchedEntry = Object.entries(state.joinCodes).find(([, value]) => value.code === joinCode);
+    selectedPlayer.textContent = matchedEntry ? matchedEntry[0] : '—';
+  }
   playerPhase.textContent = `Phase: ${state.phase} | Round ${state.round}`;
   playerClue.textContent = state.revealedClue
     ? `Current clue: ${state.revealedClue.answer}`
@@ -44,32 +44,45 @@ function renderState(state) {
   } else {
     buzzInfo.textContent = 'Buzzing is enabled for this clue.';
   }
-
-  renderPlayerOptions(state);
 }
 
 function connectAsPlayer() {
-  const playerName = playerNameSelect.value;
-  if (!playerName) return;
+  const joinCode = (joinCodeInput.value || '').trim().toUpperCase();
+  if (!joinCode) return;
 
   if (socket) {
     socket.disconnect();
   }
 
-  socket = io({ query: { role: 'player', playerName } });
-  selectedPlayer.textContent = playerName;
+  socket = io({ query: { role: 'player', joinCode } });
+  selectedPlayer.textContent = 'Authenticating...';
 
   socket.on('connect', () => setConnectionStatus('Connected', true));
   socket.on('disconnect', () => setConnectionStatus('Disconnected', false));
+  socket.on('auth:rejected', ({ reason }) => {
+    selectedPlayer.textContent = '—';
+    setConnectionStatus(`Rejected: ${reason}`, false);
+  });
+  socket.on('session:taken-over', ({ playerName }) => {
+    setConnectionStatus(`Disconnected: session taken over for ${playerName}`, false);
+  });
   socket.on('state:update', (state) => renderState(state));
 }
 
 connectButton.addEventListener('click', connectAsPlayer);
 buzzButton.addEventListener('click', () => {
   if (!socket || !socket.connected || buzzButton.disabled) return;
-  socket.emit('player:buzz', { playerName: playerNameSelect.value, at: Date.now() });
+  socket.emit('player:buzz', { at: Date.now() });
 });
 
-fetchState().then(renderState).catch(() => {
+const initialCode = new URLSearchParams(window.location.search).get('code');
+if (initialCode) {
+  joinCodeInput.value = initialCode.toUpperCase();
+}
+
+fetchState().then((state) => {
+  renderState(state);
+  if (initialCode) connectAsPlayer();
+}).catch(() => {
   setConnectionStatus('Unable to load state', false);
 });

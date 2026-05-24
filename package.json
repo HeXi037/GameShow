@@ -1,0 +1,16 @@
+{
+  "name": "mogul-money-clone",
+  "version": "1.0.0",
+  "description": "Self-hosted Mogul Money style game show",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ejs": "^3.1.10",
+    "express": "^4.19.2",
+    "express-session": "^1.18.0",
+    "multer": "^1.4.5-lts.1",
+    "socket.io": "^4.8.1"
+  }
+}

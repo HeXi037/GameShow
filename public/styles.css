@@ -1,0 +1,12 @@
+body { margin: 0; font-family: Arial, sans-serif; background: #041f5c; color: #fff; }
+.layout { display: grid; grid-template-columns: 3fr 1fr; gap: 16px; padding: 16px; }
+.board { display: grid; grid-template-columns: repeat(5, minmax(120px, 1fr)); gap: 6px; }
+.tile, .category { border: 2px solid #1d3b8f; background: #06308f; color: #ffcf54; min-height: 60px; display:flex;align-items:center;justify-content:center;text-align:center;padding:6px; font-weight: bold; }
+.tile.used { opacity: 0.25; pointer-events:none; }
+.card, #scoreboard table { background: rgba(0,0,0,.2); padding: 12px; border-radius: 8px; margin-bottom: 12px; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 8px; border-bottom: 1px solid rgba(255,255,255,.2); }
+.centered { min-height: 100vh; display:grid; place-items:center; }
+input, select, button { width: 100%; margin: 4px 0; padding: 8px; }
+#revealed { margin-top: 12px; background: rgba(0,0,0,.3); padding: 12px; border-radius: 8px; }
+@media (max-width: 900px) { .layout { grid-template-columns: 1fr; } .board { overflow-x:auto; } }

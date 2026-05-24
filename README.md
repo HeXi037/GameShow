@@ -30,10 +30,26 @@ Then open:
 Default host password is `mogulhost` (set `HOST_PASSWORD` env var in production).
 
 ## Loading Custom JSON Game Data
+You can start a game using either an uploaded JSON file or a pre-existing file in `data/`.
+
+### Workflow A: Upload JSON from your computer
 1. Login as host.
 2. Enter comma-separated player names.
 3. Upload a JSON file that follows the same structure as `data/sample-game.json`.
 4. Click **Start New Game**.
+
+### Workflow B: Load named local file from `data/`
+1. Add your game file under `data/` (for example: `data/my-event-rounds.json`).
+2. Login as host.
+3. Enter comma-separated player names.
+4. Leave upload blank and set **Or load from local data/ file** to the file name (for example `my-event-rounds.json`).
+5. Click **Start New Game**.
+
+If both upload and local file name are provided, the uploaded file is used.
+
+The server now:
+- Cleans up uploaded temp files after parsing (to avoid disk growth).
+- Returns clear errors for malformed JSON and file-read failures.
 
 ## Sample JSON Schema (simplified)
 ```json

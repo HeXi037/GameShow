@@ -5,7 +5,7 @@ const http = require('http');
 const multer = require('multer');
 const session = require('express-session');
 const { Server } = require('socket.io');
-const { initializeGame, selectClue, scoreClue, applyMultiplier, advanceQuickMoney, initializeQuickMoney } = require('./src/gameState');
+const { initializeGame, selectClue, scoreClue, applyMultiplier, advanceQuickMoney } = require('./src/gameState');
 
 const app = express();
 const server = http.createServer(app);
@@ -62,22 +62,30 @@ let gameState = emptyState();
 const connectedClients = new Map();
 
 function normalizeClientRole(rawRole) {
-  return rawRole === 'host' || rawRole === 'viewer' ? rawRole : null;
+  return rawRole === 'host' || rawRole === 'viewer' || rawRole === 'player' ? rawRole : null;
 }
 
 function presenceState() {
   let hostCount = 0;
   let viewerCount = 0;
+  let playerCount = 0;
+  const playersConnected = [];
 
-  connectedClients.forEach((role) => {
-    if (role === 'host') hostCount += 1;
-    if (role === 'viewer') viewerCount += 1;
+  connectedClients.forEach((client) => {
+    if (client.role === 'host') hostCount += 1;
+    if (client.role === 'viewer') viewerCount += 1;
+    if (client.role === 'player') {
+      playerCount += 1;
+      if (client.playerName) playersConnected.push(client.playerName);
+    }
   });
 
   return {
     totalConnections: connectedClients.size,
     hostConnections: hostCount,
     viewerConnections: viewerCount,
+    playerConnections: playerCount,
+    playerNames: [...new Set(playersConnected)],
     hostConnected: hostCount > 0
   };
 }
@@ -298,6 +306,8 @@ function requireHost(req, res, next) {
 }
 
 app.get('/', (req, res) => res.render('index'));
+app.get('/player', (req, res) => res.render('player'));
+app.get('/state', (req, res) => res.json(publicState()));
 app.get('/host/login', (req, res) => res.render('login', { error: null }));
 
 app.post('/host/login', (req, res, next) => {
@@ -430,7 +440,8 @@ app.post('/host/quick-money/submit', requireHost, (req, res) => {
 
 io.on('connection', (socket) => {
   const role = normalizeClientRole(socket.handshake.query?.role);
-  connectedClients.set(socket.id, role);
+  const playerName = String(socket.handshake.query?.playerName || '').trim() || null;
+  connectedClients.set(socket.id, { role, playerName });
 
   io.emit('state:update', publicState());
   socket.emit('state:update', publicState());

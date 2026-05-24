@@ -84,6 +84,35 @@ function renderReveal() {
   });
 }
 
+function renderQuickMoneyPanel() {
+  const panel = document.getElementById('quickMoneyStatus');
+  if (!panel) return;
+
+  if (state.phase !== 'quickMoney') {
+    panel.innerHTML = '<p>Quick Money has not started.</p>';
+    return;
+  }
+
+  const quickMoney = state.quickMoney || {};
+  const prompts = state.quickMoneyPrompts || [];
+  const finalistName = quickMoney.finalists?.[quickMoney.currentFinalistIndex] || '—';
+  const promptNumber = Number(quickMoney.promptIndex || 0) + 1;
+  const promptText = prompts[quickMoney.promptIndex] || 'Prompt unavailable';
+  panel.innerHTML = `<p><strong>Finalist:</strong> ${finalistName}</p><p><strong>Prompt ${promptNumber}:</strong> ${promptText}</p><p><strong>Turn Active:</strong> ${quickMoney.turnActive ? 'Yes' : 'No'}</p><p><strong>Timer:</strong> <span id="quickMoneyCountdown">—</span></p>`;
+}
+
+function renderQuickMoneyCountdown() {
+  const countdownEl = document.getElementById('quickMoneyCountdown');
+  if (!countdownEl) return;
+  const endsAt = state.quickMoney?.timerEndsAt;
+  if (!endsAt || !state.quickMoney?.turnActive) {
+    countdownEl.textContent = 'Not running';
+    return;
+  }
+  const remainingMs = Math.max(0, endsAt - Date.now());
+  countdownEl.textContent = `${Math.ceil(remainingMs / 1000)}s`;
+}
+
 document.getElementById('multiplierForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const data = Object.fromEntries(new FormData(e.target).entries());
@@ -107,6 +136,8 @@ socket.on('state:update', (next) => {
   renderScoreboard(state.players || []);
   renderHostBoard();
   renderReveal();
+  renderQuickMoneyPanel();
+  renderQuickMoneyCountdown();
   renderPresence();
 });
 
@@ -131,5 +162,9 @@ socket.io.on('reconnect', () => {
 renderScoreboard(state.players || []);
 renderHostBoard();
 renderReveal();
+renderQuickMoneyPanel();
+renderQuickMoneyCountdown();
 renderPresence();
 setConnectionStatus(socket.connected ? 'Connected' : 'Connecting...', socket.connected);
+
+setInterval(renderQuickMoneyCountdown, 250);

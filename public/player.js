@@ -1,5 +1,6 @@
 let socket = null;
 let currentState = null;
+let playerStatusMessage = '';
 
 const joinCodeInput = document.getElementById('joinCode');
 const connectButton = document.getElementById('connectButton');
@@ -44,6 +45,9 @@ function renderState(state) {
   } else {
     buzzInfo.textContent = 'Buzzing is enabled for this clue.';
   }
+  if (playerStatusMessage) {
+    buzzInfo.textContent = `${buzzInfo.textContent} ${playerStatusMessage}`;
+  }
 }
 
 function connectAsPlayer() {
@@ -67,6 +71,19 @@ function connectAsPlayer() {
     setConnectionStatus(`Disconnected: session taken over for ${playerName}`, false);
   });
   socket.on('state:update', (state) => renderState(state));
+  socket.on('player:status', ({ kind, playerName, holdMs }) => {
+    if (kind === 'locked-winner-disconnected') {
+      const holdSeconds = Math.floor(Number(holdMs || 0) / 1000);
+      playerStatusMessage = `Your lock was retained for ${holdSeconds}s while disconnected. Reconnect quickly or ask host to reset manually.`;
+    } else if (kind === 'lock-restored') {
+      playerStatusMessage = `Reconnected as ${playerName}. Your buzz lock is still active; wait for host scoring.`;
+    } else if (kind === 'eligibility-restored') {
+      playerStatusMessage = `Reconnected as ${playerName}. Buzz is open and your eligibility is restored.`;
+    } else {
+      playerStatusMessage = '';
+    }
+    if (currentState) renderState(currentState);
+  });
 }
 
 connectButton.addEventListener('click', connectAsPlayer);

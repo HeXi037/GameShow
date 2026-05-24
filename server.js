@@ -45,6 +45,22 @@ const emptyState = () => ({
 });
 
 let gameState = emptyState();
+const socketRoles = new Map();
+
+function currentPresence() {
+  let hosts = 0;
+  let viewers = 0;
+  for (const role of socketRoles.values()) {
+    if (role === 'host') hosts += 1;
+    else viewers += 1;
+  }
+
+  return {
+    totalSockets: io.engine.clientsCount,
+    hosts,
+    viewers
+  };
+}
 
 function loadGameData(filePath) {
   const raw = fs.readFileSync(filePath, 'utf-8');
@@ -90,8 +106,13 @@ function publicState() {
     players: gameState.players,
     board: gameState.boardData ? getRoundBoard(gameState.round) : null,
     revealedClue: gameState.revealedClue,
-    quickMoney: gameState.quickMoney
+    quickMoney: gameState.quickMoney,
+    presence: currentPresence()
   };
+}
+
+function emitStateUpdate() {
+  io.emit('state:update', publicState());
 }
 
 function requireHost(req, res, next) {
@@ -134,7 +155,7 @@ app.post('/host/setup', requireHost, upload.single('boardFile'), (req, res) => {
     gameState.players = names.map((name) => ({ name, score: 0 }));
     gameState.boardData = boardData;
 
-    io.emit('state:update', publicState());
+    emitStateUpdate();
     res.redirect('/host');
   } catch (error) {
     res.status(400).send(error.message);
@@ -148,7 +169,7 @@ app.post('/host/select-clue', requireHost, (req, res) => {
 
   clue.used = true;
   gameState.revealedClue = { ...clue, categoryIndex: Number(categoryIndex), clueIndex: Number(clueIndex) };
-  io.emit('state:update', publicState());
+  emitStateUpdate();
   res.sendStatus(200);
 });
 
@@ -178,7 +199,7 @@ app.post('/host/score-clue', requireHost, (req, res) => {
     }
   }
 
-  io.emit('state:update', publicState());
+  emitStateUpdate();
   res.sendStatus(200);
 });
 
@@ -190,14 +211,14 @@ app.post('/host/mogul-multiplier', requireHost, (req, res) => {
   const amount = Math.max(0, Number(wager || 0));
   player.score += correct === 'true' ? amount : -amount;
   sortPlayers();
-  io.emit('state:update', publicState());
+  emitStateUpdate();
   res.sendStatus(200);
 });
 
 app.post('/host/quick-money/start-turn', requireHost, (req, res) => {
   const { seconds } = req.body;
   gameState.quickMoney.timerEndsAt = Date.now() + Number(seconds || 20) * 1000;
-  io.emit('state:update', publicState());
+  emitStateUpdate();
   res.sendStatus(200);
 });
 
@@ -210,13 +231,28 @@ app.post('/host/quick-money/submit', requireHost, (req, res) => {
   if (player) player.score += Number(points);
   sortPlayers();
 
-  io.emit('state:update', publicState());
+  emitStateUpdate();
   res.sendStatus(200);
 });
 
 io.on('connection', (socket) => {
+  const requestedRole = socket.handshake.auth?.role || socket.handshake.query?.role;
+  const normalizedRole = requestedRole === 'host' ? 'host' : 'viewer';
+  socketRoles.set(socket.id, normalizedRole);
+
   socket.emit('state:update', publicState());
-  socket.on('disconnect', () => {});
+  emitStateUpdate();
+
+  socket.on('presence:set-role', (role) => {
+    const nextRole = role === 'host' ? 'host' : 'viewer';
+    socketRoles.set(socket.id, nextRole);
+    emitStateUpdate();
+  });
+
+  socket.on('disconnect', () => {
+    socketRoles.delete(socket.id);
+    emitStateUpdate();
+  });
 });
 
 server.listen(PORT, () => {

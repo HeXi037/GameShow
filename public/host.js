@@ -1,5 +1,34 @@
-const socket = io();
+const socket = io({ auth: { role: 'host' } });
 let state = window.__INITIAL_STATE__ || {};
+
+function pushNotice(message) {
+  const notices = document.getElementById('connectionNotices');
+  if (!notices) return;
+  const row = document.createElement('p');
+  row.textContent = message;
+  notices.prepend(row);
+  while (notices.children.length > 4) notices.removeChild(notices.lastChild);
+}
+
+function updateConnectionStatus() {
+  const status = document.getElementById('hostConnectionStatus');
+  if (!status) return;
+  status.textContent = socket.connected ? 'Connected' : 'Disconnected';
+}
+
+function renderPresence() {
+  const viewerCount = document.getElementById('viewerCount');
+  const socketCount = document.getElementById('socketCount');
+  const presence = state.presence || {};
+  if (viewerCount) viewerCount.textContent = String(presence.viewers || 0);
+  if (socketCount) socketCount.textContent = String(presence.totalSockets || 0);
+}
+
+function activeSessionNoticeReason() {
+  if (state.revealedClue) return 'an active reveal';
+  if (state.quickMoney?.timerEndsAt && Date.now() < Number(state.quickMoney.timerEndsAt)) return 'an active Quick Money timer';
+  return null;
+}
 
 function renderScoreboard(players) {
   const rows = players.map((p) => `<tr><td>${p.name}</td><td>${p.score}</td></tr>`).join('');
@@ -65,8 +94,35 @@ socket.on('state:update', (next) => {
   renderScoreboard(state.players || []);
   renderHostBoard();
   renderReveal();
+  renderPresence();
+});
+
+socket.on('connect', () => {
+  updateConnectionStatus();
+  socket.emit('presence:set-role', 'host');
+});
+
+socket.on('disconnect', () => {
+  updateConnectionStatus();
+});
+
+socket.io.on('reconnect', () => {
+  updateConnectionStatus();
+  socket.emit('presence:set-role', 'host');
+  const reason = activeSessionNoticeReason();
+  if (reason) {
+    pushNotice(`Reconnected during ${reason}. Please verify the game state before continuing.`);
+  } else {
+    pushNotice('Reconnected to server.');
+  }
+});
+
+socket.io.on('reconnect_attempt', () => {
+  updateConnectionStatus();
 });
 
 renderScoreboard(state.players || []);
 renderHostBoard();
 renderReveal();
+renderPresence();
+updateConnectionStatus();

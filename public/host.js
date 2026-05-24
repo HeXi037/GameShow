@@ -46,6 +46,17 @@ function renderJoinCodes() {
   wrap.innerHTML = `<table><thead><tr><th>Player</th><th>Join Code</th><th>Join Link</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
+
+function renderRules() {
+  const form = document.getElementById('rulesForm');
+  if (!form) return;
+  const config = state.config || {};
+  form.reopenOnIncorrect.checked = Boolean(config.reopenOnIncorrect);
+  form.allowRebuzzBySamePlayer.checked = Boolean(config.allowRebuzzBySamePlayer);
+  form.buzzTimeoutSeconds.value = Number(config.buzzTimeoutSeconds || 0);
+  form.maxAttemptsPerClue.value = config.maxAttemptsPerClue === 'unlimited' ? '' : String(config.maxAttemptsPerClue || '');
+}
+
 function showReconnectNotice(message) {
   const list = document.getElementById('connectionNotices');
   if (!list) return;
@@ -102,16 +113,18 @@ function renderReveal() {
   const lockTime = buzz.lockedAt ? new Date(buzz.lockedAt).toLocaleTimeString() : '—';
   const winnerPanel = `<p><b>Buzz Status:</b> ${buzzState}</p><p><b>Winner:</b> ${buzz.lockedBy || 'None'}</p><p><b>Lock Time:</b> ${lockTime}</p>`;
   const indicator = isMultiplier ? '<p><strong>⚡ Mogul Multiplier clue is active.</strong></p>' : '';
+  const config = state.config || {};
+  const ruleSummary = `<p><b>Rules:</b> reopenOnIncorrect=${Boolean(config.reopenOnIncorrect)}, maxAttemptsPerClue=${config.maxAttemptsPerClue ?? 'unlimited'}, buzzTimeoutSeconds=${Number(config.buzzTimeoutSeconds || 0)}, allowRebuzzBySamePlayer=${Boolean(config.allowRebuzzBySamePlayer)}</p>`;
 
   if (isMultiplier) {
     multiplierCard.hidden = false;
-    el.innerHTML = `<p><b>Answer:</b> ${state.revealedClue.answer}</p><p><b>Expected question:</b> ${state.revealedClue.question}</p><p><b>Buzz:</b> ${buzzStatus}</p>${winnerPanel}${indicator}`;
+    el.innerHTML = `<p><b>Answer:</b> ${state.revealedClue.answer}</p><p><b>Expected question:</b> ${state.revealedClue.question}</p><p><b>Buzz:</b> ${buzzStatus}</p>${winnerPanel}${indicator}${ruleSummary}`;
     return;
   }
 
   multiplierCard.hidden = true;
   const fields = state.players.map((p) => `<label>${p.name}<select name="${p.name}"><option value="skip">Skip</option><option value="correct">Correct</option><option value="incorrect">Incorrect</option></select></label>`).join('');
-  el.innerHTML = `<p><b>Answer:</b> ${state.revealedClue.answer}</p><p><b>Expected question:</b> ${state.revealedClue.question}</p><p><b>Buzz:</b> ${buzzStatus}</p>${winnerPanel}${indicator}<div class="controls"><button id="openBuzz" type="button" ${buzz.open || buzz.lockedBy ? 'disabled' : ''}>Open Buzz</button><button id="resetBuzz" type="button" ${!buzz.lockedBy && !buzz.open ? 'disabled' : ''}>Reset Buzz</button></div><form id="scoreForm">${fields}<button type="submit" ${!buzz.lockedBy ? 'disabled' : ''}>Apply Scores</button></form>`;
+  el.innerHTML = `<p><b>Answer:</b> ${state.revealedClue.answer}</p><p><b>Expected question:</b> ${state.revealedClue.question}</p><p><b>Buzz:</b> ${buzzStatus}</p>${winnerPanel}${indicator}${ruleSummary}<div class="controls"><button id="openBuzz" type="button" ${buzz.open || buzz.lockedBy ? 'disabled' : ''}>Open Buzz</button><button id="resetBuzz" type="button" ${!buzz.lockedBy && !buzz.open ? 'disabled' : ''}>Reset Buzz</button></div><form id="scoreForm">${fields}<button type="submit" ${!buzz.lockedBy ? 'disabled' : ''}>Apply Scores</button></form>`;
   const openBuzzButton = document.getElementById('openBuzz');
   if (openBuzzButton) {
     openBuzzButton.addEventListener('click', async () => {
@@ -164,6 +177,19 @@ function renderQuickMoneyCountdown() {
   countdownEl.textContent = `${Math.ceil(remainingMs / 1000)}s`;
 }
 
+
+document.getElementById('rulesForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const maxAttempts = String(fd.get('maxAttemptsPerClue') || '').trim();
+  await post('/host/config', {
+    reopenOnIncorrect: fd.get('reopenOnIncorrect') === 'on',
+    allowRebuzzBySamePlayer: fd.get('allowRebuzzBySamePlayer') === 'on',
+    buzzTimeoutSeconds: Number(fd.get('buzzTimeoutSeconds') || 0),
+    maxAttemptsPerClue: maxAttempts ? Number(maxAttempts) : 'unlimited'
+  });
+});
+
 document.getElementById('multiplierForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const data = Object.fromEntries(new FormData(e.target).entries());
@@ -191,6 +217,7 @@ socket.on('state:update', (next) => {
   renderQuickMoneyCountdown();
   renderPresence();
   renderJoinCodes();
+  renderRules();
 });
 
 socket.on('connect', () => {
@@ -222,6 +249,7 @@ renderQuickMoneyPanel();
 renderQuickMoneyCountdown();
 renderPresence();
 renderJoinCodes();
+renderRules();
 setConnectionStatus(socket.connected ? 'Connected' : 'Connecting...', socket.connected);
 
 setInterval(renderQuickMoneyCountdown, 250);

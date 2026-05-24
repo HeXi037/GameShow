@@ -5,7 +5,7 @@ const http = require('http');
 const multer = require('multer');
 const session = require('express-session');
 const { Server } = require('socket.io');
-const { initializeGame, selectClue, scoreClue, applyMultiplier, advanceQuickMoney, openBuzz, resetBuzz, lockBuzz } = require('./src/gameState');
+const { initializeGame, selectClue, scoreClue, applyMultiplier, advanceQuickMoney, openBuzz, resetBuzz, lockBuzz, applyScoreAndBuzzRules, updateConfig, normalizeConfig } = require('./src/gameState');
 
 const app = express();
 const server = http.createServer(app);
@@ -303,6 +303,7 @@ function publicState() {
     board: gameState.boardData ? getRoundBoard(gameState.round) : null,
     revealedClue: gameState.revealedClue,
     buzz: gameState.buzz,
+    config: gameState.config,
     quickMoneyPrompts: gameState.boardData?.quickMoneyPrompts || [],
     quickMoney: gameState.quickMoney,
     presence: presenceState(),
@@ -484,9 +485,16 @@ app.post('/host/score-clue', requireHost, (req, res) => {
   if (gameState.revealedClue && !gameState.revealedClue.isMogulMultiplier && !gameState.buzz?.lockedBy) {
     return res.status(400).send('Select a buzz winner before scoring this clue.');
   }
-  const result = scoreClue(gameState, playerResults || {});
+  const result = applyScoreAndBuzzRules(gameState, playerResults || {});
   if (result.error) return res.status(400).send(result.error);
   gameState = result.state;
+  io.emit('state:update', publicState());
+  res.sendStatus(200);
+});
+
+
+app.post('/host/config', requireHost, (req, res) => {
+  gameState = updateConfig(gameState, req.body || {});
   io.emit('state:update', publicState());
   res.sendStatus(200);
 });
@@ -584,7 +592,7 @@ io.on('connection', (socket) => {
     }
 
     if (!gameState.buzz?.open) {
-      socket.emit('buzz:rejected', { reason: 'buzz-closed' });
+      socket.emit('buzz:rejected', { reason: gameState.buzz?.timeoutAt && Date.now() > gameState.buzz.timeoutAt ? 'buzz-timeout' : 'buzz-closed' });
       return;
     }
 
@@ -658,6 +666,18 @@ io.on('connection', (socket) => {
     }
   }
 });
+
+
+setInterval(() => {
+  if (!gameState.revealedClue || !gameState.buzz?.open || gameState.buzz?.lockedBy) return;
+  const timeoutAt = gameState.buzz.timeoutAt;
+  if (!timeoutAt || Date.now() < timeoutAt) return;
+  const result = resetBuzz(gameState);
+  if (result.error) return;
+  gameState = result.state;
+  io.emit('state:update', publicState());
+  emitHostNotice('Buzz timed out with no attempts; buzz closed automatically.', 'info');
+}, 250);
 
 server.listen(PORT, () => {
   console.log(`Mogul Money clone running on http://localhost:${PORT}`);

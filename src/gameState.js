@@ -6,6 +6,12 @@ function initializeGame({ playerNames, boardData, topFinalists = 2 }) {
     players,
     boardData,
     revealedClue: null,
+    config: {
+      reopenOnIncorrect: true,
+      maxAttemptsPerClue: 'unlimited',
+      buzzTimeoutSeconds: 0,
+      allowRebuzzBySamePlayer: false
+    },
     buzz: null,
     quickMoney: {
       finalists: [],
@@ -18,6 +24,20 @@ function initializeGame({ playerNames, boardData, topFinalists = 2 }) {
       completed: false,
       topFinalists
     }
+  };
+}
+
+function normalizeConfig(config = {}) {
+  const parsedMaxAttempts = config.maxAttemptsPerClue;
+  const maxAttemptsPerClue = parsedMaxAttempts === 'unlimited' || parsedMaxAttempts === null || parsedMaxAttempts === undefined
+    ? 'unlimited'
+    : Number(parsedMaxAttempts);
+
+  return {
+    reopenOnIncorrect: config.reopenOnIncorrect !== false,
+    maxAttemptsPerClue: maxAttemptsPerClue === 'unlimited' ? 'unlimited' : Math.max(1, Math.floor(maxAttemptsPerClue)),
+    buzzTimeoutSeconds: Math.max(0, Number(config.buzzTimeoutSeconds) || 0),
+    allowRebuzzBySamePlayer: Boolean(config.allowRebuzzBySamePlayer)
   };
 }
 
@@ -54,7 +74,8 @@ function selectClue(state, categoryIndex, clueIndex) {
         lockedBy: null,
         lockedAt: null,
         attempts: [],
-        eligiblePlayers: state.players.map((player) => player.name)
+        eligiblePlayers: state.players.map((player) => player.name),
+        timeoutAt: null
       }
     }
   };
@@ -182,7 +203,8 @@ function openBuzz(state) {
   if (!state.revealedClue) return { state, error: 'No active clue.' };
   if (!state.buzz) return { state, error: 'Buzz state is not initialized for this clue.' };
   if (state.buzz.lockedBy) return { state, error: 'Buzz is locked. Reset buzz before reopening.' };
-  return { state: { ...state, buzz: { ...state.buzz, open: true } } };
+  const timeoutAt = state.config?.buzzTimeoutSeconds > 0 ? Date.now() + (state.config.buzzTimeoutSeconds * 1000) : null;
+  return { state: { ...state, buzz: { ...state.buzz, open: true, timeoutAt } } };
 }
 
 function resetBuzz(state) {
@@ -206,6 +228,14 @@ function lockBuzz(state, playerName, at = Date.now()) {
   if (!state.buzz || !state.buzz.open) return { state, error: 'Buzz window is closed.' };
   if (state.buzz.lockedBy) return { state, error: 'Buzz already locked.' };
   if (!state.players.some((player) => player.name === playerName)) return { state, error: 'Unknown player.' };
+  if (!state.config?.allowRebuzzBySamePlayer && (state.buzz.attempts || []).some((attempt) => attempt.playerName === playerName)) {
+    return { state, error: 'Player already attempted this clue.' };
+  }
+
+  const maxAttemptsPerClue = state.config?.maxAttemptsPerClue;
+  if (maxAttemptsPerClue !== 'unlimited' && Number.isFinite(maxAttemptsPerClue) && (state.buzz.attempts || []).length >= Number(maxAttemptsPerClue)) {
+    return { state, error: 'Maximum attempts reached for this clue.' };
+  }
 
   return {
     state: {
@@ -215,10 +245,59 @@ function lockBuzz(state, playerName, at = Date.now()) {
         open: false,
         lockedBy: playerName,
         lockedAt: Number(at) || Date.now(),
-        attempts: [...(state.buzz.attempts || []), { playerName, at: Number(at) || Date.now() }]
+        attempts: [...(state.buzz.attempts || []), { playerName, at: Number(at) || Date.now() }],
+        timeoutAt: null
       }
     }
   };
 }
 
-module.exports = { initializeGame, selectClue, scoreClue, applyMultiplier, advanceQuickMoney, initializeQuickMoney, allCluesUsed, openBuzz, resetBuzz, lockBuzz };
+function applyScoreAndBuzzRules(state, playerResults = {}) {
+  if (!state.revealedClue || state.revealedClue.isMogulMultiplier) return { state, error: 'No standard clue is active.' };
+  const lockedPlayer = state.buzz?.lockedBy;
+  if (!lockedPlayer) return { state, error: 'Select a buzz winner before scoring this clue.' };
+
+  const lockedResult = playerResults[lockedPlayer] || 'skip';
+  if (lockedResult !== 'incorrect') {
+    return scoreClue(state, playerResults);
+  }
+
+  const updatedPlayers = state.players.map((player) => {
+    const result = playerResults[player.name];
+    const clueValue = Number(state.revealedClue.value);
+    if (result === 'correct') return { ...player, score: player.score + clueValue };
+    if (result === 'incorrect') return { ...player, score: player.score - clueValue };
+    return player;
+  });
+
+  if (!state.config?.reopenOnIncorrect) {
+    return scoreClue({ ...state, players: updatedPlayers }, playerResults);
+  }
+
+  const maxAttempts = state.config?.maxAttemptsPerClue;
+  const attemptsUsed = (state.buzz?.attempts || []).length;
+  const hasAttemptsRemaining = maxAttempts === 'unlimited' || attemptsUsed < Number(maxAttempts);
+  if (!hasAttemptsRemaining) {
+    return scoreClue({ ...state, players: updatedPlayers }, playerResults);
+  }
+
+  return {
+    state: {
+      ...state,
+      players: sortPlayers(updatedPlayers),
+      buzz: {
+        ...state.buzz,
+        open: true,
+        lockedBy: null,
+        lockedAt: null,
+        timeoutAt: state.config?.buzzTimeoutSeconds > 0 ? Date.now() + (state.config.buzzTimeoutSeconds * 1000) : null
+      }
+    }
+  };
+}
+
+function updateConfig(state, configPatch = {}) {
+  return { ...state, config: normalizeConfig({ ...(state.config || {}), ...configPatch }) };
+}
+
+module.exports = { initializeGame, selectClue, scoreClue, applyMultiplier, advanceQuickMoney, initializeQuickMoney, allCluesUsed, openBuzz, resetBuzz, lockBuzz, applyScoreAndBuzzRules, updateConfig, normalizeConfig };

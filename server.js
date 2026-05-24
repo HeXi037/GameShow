@@ -5,7 +5,7 @@ const http = require('http');
 const multer = require('multer');
 const session = require('express-session');
 const { Server } = require('socket.io');
-const { initializeGame, selectClue, scoreClue, applyMultiplier, advanceQuickMoney, openBuzz, lockBuzz } = require('./src/gameState');
+const { initializeGame, selectClue, scoreClue, applyMultiplier, advanceQuickMoney, openBuzz, resetBuzz, lockBuzz } = require('./src/gameState');
 
 const app = express();
 const server = http.createServer(app);
@@ -404,8 +404,19 @@ app.post('/host/open-buzz', requireHost, (req, res) => {
   res.sendStatus(200);
 });
 
+app.post('/host/reset-buzz', requireHost, (req, res) => {
+  const result = resetBuzz(gameState);
+  if (result.error) return res.status(400).send(result.error);
+  gameState = result.state;
+  io.emit('state:update', publicState());
+  res.sendStatus(200);
+});
+
 app.post('/host/score-clue', requireHost, (req, res) => {
   const { playerResults } = req.body;
+  if (gameState.revealedClue && !gameState.revealedClue.isMogulMultiplier && !gameState.buzz?.lockedBy) {
+    return res.status(400).send('Select a buzz winner before scoring this clue.');
+  }
   const result = scoreClue(gameState, playerResults || {});
   if (result.error) return res.status(400).send(result.error);
   gameState = result.state;

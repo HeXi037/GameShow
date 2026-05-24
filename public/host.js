@@ -30,9 +30,25 @@ function renderHostBoard() {
 
 function renderReveal() {
   const el = document.getElementById('hostReveal');
-  if (!state.revealedClue) { el.innerHTML = 'No clue currently revealed.'; return; }
+  const multiplierCard = document.getElementById('multiplierCard');
+  if (!state.revealedClue) {
+    el.innerHTML = 'No clue currently revealed.';
+    multiplierCard.hidden = true;
+    return;
+  }
+
+  const isMultiplier = Boolean(state.revealedClue.isMogulMultiplier);
+  const indicator = isMultiplier ? '<p><strong>⚡ Mogul Multiplier clue is active.</strong></p>' : '';
+
+  if (isMultiplier) {
+    multiplierCard.hidden = false;
+    el.innerHTML = `<p><b>Answer:</b> ${state.revealedClue.answer}</p><p><b>Expected question:</b> ${state.revealedClue.question}</p>${indicator}`;
+    return;
+  }
+
+  multiplierCard.hidden = true;
   const fields = state.players.map((p) => `<label>${p.name}<select name="${p.name}"><option value="skip">Skip</option><option value="correct">Correct</option><option value="incorrect">Incorrect</option></select></label>`).join('');
-  el.innerHTML = `<p><b>Answer:</b> ${state.revealedClue.answer}</p><p><b>Expected question:</b> ${state.revealedClue.question}</p><form id="scoreForm">${fields}<button type="submit">Apply Scores</button></form>`;
+  el.innerHTML = `<p><b>Answer:</b> ${state.revealedClue.answer}</p><p><b>Expected question:</b> ${state.revealedClue.question}</p>${indicator}<form id="scoreForm">${fields}<button type="submit">Apply Scores</button></form>`;
   document.getElementById('scoreForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const data = new FormData(e.target);

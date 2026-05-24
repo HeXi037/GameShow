@@ -143,11 +143,24 @@ app.post('/host/setup', requireHost, upload.single('boardFile'), (req, res) => {
 
 app.post('/host/select-clue', requireHost, (req, res) => {
   const { categoryIndex, clueIndex } = req.body;
-  const clue = getRoundBoard(gameState.round).categories[categoryIndex].clues[clueIndex];
+  const parsedCategoryIndex = Number(categoryIndex);
+  const parsedClueIndex = Number(clueIndex);
+  const roundBoard = getRoundBoard(gameState.round);
+  const clue = roundBoard.categories?.[parsedCategoryIndex]?.clues?.[parsedClueIndex];
+
+  if (!clue) return res.status(404).send('Clue not found.');
   if (clue.used) return res.status(400).send('Clue already used.');
 
+  let isMogulMultiplier = false;
+  if (gameState.round === 2) {
+    const multiplier = gameState.boardData.round2?.mogulMultiplier;
+    isMogulMultiplier =
+      Number(multiplier?.categoryIndex) == parsedCategoryIndex &&
+      Number(multiplier?.clueIndex) == parsedClueIndex;
+  }
+
   clue.used = true;
-  gameState.revealedClue = { ...clue, categoryIndex: Number(categoryIndex), clueIndex: Number(clueIndex) };
+  gameState.revealedClue = { ...clue, categoryIndex: parsedCategoryIndex, clueIndex: parsedClueIndex, isMogulMultiplier };
   io.emit('state:update', publicState());
   res.sendStatus(200);
 });
@@ -155,6 +168,9 @@ app.post('/host/select-clue', requireHost, (req, res) => {
 app.post('/host/score-clue', requireHost, (req, res) => {
   const { playerResults } = req.body;
   if (!gameState.revealedClue) return res.status(400).send('No active clue.');
+  if (gameState.revealedClue.isMogulMultiplier) {
+    return res.status(400).send('Use multiplier scoring for this clue.');
+  }
 
   const clueValue = Number(gameState.revealedClue.value);
   Object.entries(playerResults || {}).forEach(([name, result]) => {
@@ -184,12 +200,31 @@ app.post('/host/score-clue', requireHost, (req, res) => {
 
 app.post('/host/mogul-multiplier', requireHost, (req, res) => {
   const { playerName, wager, correct } = req.body;
-  const player = gameState.players.find((p) => p.name === playerName);
-  if (!player) return res.status(404).send('Player not found.');
 
-  const amount = Math.max(0, Number(wager || 0));
+  if (!gameState.revealedClue || !gameState.revealedClue.isMogulMultiplier) {
+    return res.status(400).send('Mogul Multiplier is not active.');
+  }
+
+  const matches = gameState.players.filter((p) => p.name === playerName);
+  if (matches.length !== 1) return res.status(400).send('Wager must target exactly one valid player.');
+
+  const amount = Number(wager);
+  if (!Number.isFinite(amount) || amount < 0) return res.status(400).send('Wager must be a non-negative number.');
+
+  const player = matches[0];
+  const maxWager = Math.max(0, Number(player.score));
+  if (amount > maxWager) return res.status(400).send('Wager cannot exceed player score.');
+
   player.score += correct === 'true' ? amount : -amount;
   sortPlayers();
+  gameState.revealedClue = null;
+
+  if (allCluesUsed(gameState.round)) {
+    gameState.phase = 'quickMoney';
+    gameState.quickMoney.finalists = [...gameState.players].slice(0, 2).map((p) => p.name);
+    gameState.quickMoney.active = true;
+  }
+
   io.emit('state:update', publicState());
   res.sendStatus(200);
 });

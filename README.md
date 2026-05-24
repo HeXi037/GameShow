@@ -27,7 +27,7 @@ Then open:
 - Viewer board: `http://localhost:3000/`
 - Host login: `http://localhost:3000/host/login`
 
-Default host password is `mogulhost` (set `HOST_PASSWORD` env var in production).
+Default host password is `mogulhost` in development only (`NODE_ENV=development`). In non-development deployments, `HOST_PASSWORD` is required and the app will fail to start if it is missing.
 
 ## Loading Custom JSON Game Data
 1. Login as host.
@@ -47,3 +47,9 @@ Default host password is `mogulhost` (set `HOST_PASSWORD` env var in production)
 ## Notes
 - If a client disconnects/reconnects, the server emits current state on connection so they recover gracefully.
 - `round2.mogulMultiplier` identifies where the special wager clue can be placed. The host can apply wagers from the host panel.
+
+## Secure Deployment Recommendations
+- Set a strong `HOST_PASSWORD` value in your environment for any non-development deployment.
+- Run behind a TLS-terminating reverse proxy (for example Nginx/Caddy/Traefik) so host logins and sessions are encrypted.
+- Enable secure cookies by setting `COOKIE_SECURE=true` when HTTPS is used (recommended in production).
+- Keep `SESSION_SECRET` private and use a long random value in production.

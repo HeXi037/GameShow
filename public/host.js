@@ -29,6 +29,23 @@ function renderPresence() {
   }
 }
 
+function renderJoinCodes() {
+  const wrap = document.getElementById('joinLinks');
+  if (!wrap) return;
+  const joinCodes = state.joinCodes || {};
+  const players = Object.keys(joinCodes);
+  if (!players.length) {
+    wrap.innerHTML = '<p>No join codes generated yet.</p>';
+    return;
+  }
+  const rows = players.map((playerName) => {
+    const code = joinCodes[playerName].code;
+    const fullLink = `${window.location.origin}${joinCodes[playerName].link}`;
+    return `<tr><td>${playerName}</td><td><code>${code}</code></td><td><a href="${fullLink}" target="_blank" rel="noopener noreferrer">${fullLink}</a></td></tr>`;
+  }).join('');
+  wrap.innerHTML = `<table><thead><tr><th>Player</th><th>Join Code</th><th>Join Link</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
 function showReconnectNotice(message) {
   const list = document.getElementById('connectionNotices');
   if (!list) return;
@@ -168,6 +185,7 @@ socket.on('state:update', (next) => {
   renderQuickMoneyPanel();
   renderQuickMoneyCountdown();
   renderPresence();
+  renderJoinCodes();
 });
 
 socket.on('connect', () => {
@@ -194,6 +212,7 @@ renderReveal();
 renderQuickMoneyPanel();
 renderQuickMoneyCountdown();
 renderPresence();
+renderJoinCodes();
 setConnectionStatus(socket.connected ? 'Connected' : 'Connecting...', socket.connected);
 
 setInterval(renderQuickMoneyCountdown, 250);

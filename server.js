@@ -61,6 +61,32 @@ const emptyState = () => ({
 
 let gameState = emptyState();
 const connectedClients = new Map();
+let joinIdentity = {
+  codesByPlayer: new Map(),
+  playerByCode: new Map(),
+  activeSocketByPlayer: new Map()
+};
+
+function generateJoinCode(length = 8) {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < length; i += 1) {
+    code += alphabet[Math.floor(Math.random() * alphabet.length)];
+  }
+  return code;
+}
+
+function resetJoinIdentity(playerNames) {
+  const codesByPlayer = new Map();
+  const playerByCode = new Map();
+  playerNames.forEach((name) => {
+    let code = generateJoinCode();
+    while (playerByCode.has(code)) code = generateJoinCode();
+    codesByPlayer.set(name, code);
+    playerByCode.set(code, name);
+  });
+  joinIdentity = { codesByPlayer, playerByCode, activeSocketByPlayer: new Map() };
+}
 
 function normalizeClientRole(rawRole) {
   return rawRole === 'host' || rawRole === 'viewer' || rawRole === 'player' ? rawRole : null;
@@ -261,6 +287,13 @@ function allCluesUsed(round) {
 }
 
 function publicState() {
+  const joinCodes = {};
+  joinIdentity.codesByPlayer.forEach((code, playerName) => {
+    joinCodes[playerName] = {
+      code,
+      link: `/player?code=${encodeURIComponent(code)}`
+    };
+  });
   return {
     phase: gameState.phase,
     round: gameState.round,
@@ -270,7 +303,8 @@ function publicState() {
     buzz: gameState.buzz,
     quickMoneyPrompts: gameState.boardData?.quickMoneyPrompts || [],
     quickMoney: gameState.quickMoney,
-    presence: presenceState()
+    presence: presenceState(),
+    joinCodes
   };
 }
 
@@ -368,6 +402,7 @@ app.post('/host/setup', requireHost, upload.single('boardFile'), (req, res) => {
     initializeBoardState(boardData);
 
     gameState = initializeGame({ playerNames: names, boardData, topFinalists: 2 });
+    resetJoinIdentity(names);
 
     io.emit('state:update', publicState());
     res.redirect('/host');
@@ -461,8 +496,39 @@ app.post('/host/quick-money/submit', requireHost, (req, res) => {
 
 io.on('connection', (socket) => {
   const role = normalizeClientRole(socket.handshake.query?.role);
-  const playerName = String(socket.handshake.query?.playerName || '').trim() || null;
-  connectedClients.set(socket.id, { role, playerName });
+  const joinCode = String(socket.handshake.query?.joinCode || '').trim().toUpperCase();
+  let playerName = null;
+  let identityBound = false;
+  let rejectedReason = null;
+
+  if (role === 'player') {
+    const mappedPlayerName = joinIdentity.playerByCode.get(joinCode);
+    if (!mappedPlayerName) {
+      rejectedReason = 'invalid-join-code';
+    } else {
+      const existingSocketId = joinIdentity.activeSocketByPlayer.get(mappedPlayerName);
+      if (existingSocketId && existingSocketId !== socket.id) {
+        const existingSocket = io.sockets.sockets.get(existingSocketId);
+        if (existingSocket) {
+          existingSocket.emit('session:taken-over', { playerName: mappedPlayerName });
+          existingSocket.disconnect(true);
+        }
+      }
+      playerName = mappedPlayerName;
+      joinIdentity.activeSocketByPlayer.set(mappedPlayerName, socket.id);
+      identityBound = true;
+    }
+  } else {
+    playerName = String(socket.handshake.query?.playerName || '').trim() || null;
+  }
+
+  connectedClients.set(socket.id, { role, playerName, identityBound });
+
+  if (rejectedReason) {
+    socket.emit('auth:rejected', { reason: rejectedReason });
+    socket.disconnect(true);
+    return;
+  }
 
   io.emit('state:update', publicState());
   socket.emit('state:update', publicState());
@@ -519,6 +585,10 @@ io.on('connection', (socket) => {
   socket.on('player:buzz', handleBuzzAttempt);
 
   socket.on('disconnect', () => {
+    const client = connectedClients.get(socket.id);
+    if (client?.playerName && joinIdentity.activeSocketByPlayer.get(client.playerName) === socket.id) {
+      joinIdentity.activeSocketByPlayer.delete(client.playerName);
+    }
     connectedClients.delete(socket.id);
     io.emit('state:update', publicState());
   });

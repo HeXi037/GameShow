@@ -1,5 +1,31 @@
-const socket = io();
+const socket = io({ query: { role: 'host' } });
 let state = window.__INITIAL_STATE__ || {};
+
+function setConnectionStatus(text, online) {
+  const el = document.getElementById('hostConnectionStatus');
+  if (!el) return;
+  el.textContent = text;
+  el.dataset.online = online ? 'true' : 'false';
+}
+
+function renderPresence() {
+  const viewerCount = state.presence?.viewerConnections || 0;
+  const viewerEl = document.getElementById('viewerCount');
+  if (viewerEl) viewerEl.textContent = String(viewerCount);
+
+  const hostPresentEl = document.getElementById('hostPresenceStatus');
+  if (hostPresentEl) {
+    hostPresentEl.textContent = state.presence?.hostConnected ? 'Connected' : 'Offline';
+  }
+}
+
+function showReconnectNotice(message) {
+  const list = document.getElementById('connectionNotices');
+  if (!list) return;
+  const item = document.createElement('li');
+  item.textContent = message;
+  list.prepend(item);
+}
 
 function renderScoreboard(players) {
   const rows = players.map((p) => `<tr><td>${p.name}</td><td>${p.score}</td></tr>`).join('');
@@ -81,8 +107,29 @@ socket.on('state:update', (next) => {
   renderScoreboard(state.players || []);
   renderHostBoard();
   renderReveal();
+  renderPresence();
+});
+
+socket.on('connect', () => {
+  setConnectionStatus('Connected', true);
+});
+
+socket.on('disconnect', () => {
+  setConnectionStatus('Disconnected (reconnecting...)', false);
+});
+
+socket.io.on('reconnect', () => {
+  const now = Date.now();
+  if (state.revealedClue) {
+    showReconnectNotice('Reconnected while a clue reveal was active. Re-check scoring before applying changes.');
+  }
+  if (state.quickMoney?.timerEndsAt && state.quickMoney.timerEndsAt > now) {
+    showReconnectNotice('Reconnected during an active Quick Money timer. Verify remaining time before continuing.');
+  }
 });
 
 renderScoreboard(state.players || []);
 renderHostBoard();
 renderReveal();
+renderPresence();
+setConnectionStatus(socket.connected ? 'Connected' : 'Connecting...', socket.connected);

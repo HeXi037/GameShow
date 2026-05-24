@@ -5,7 +5,7 @@ const http = require('http');
 const multer = require('multer');
 const session = require('express-session');
 const { Server } = require('socket.io');
-const { initializeGame, selectClue, scoreClue, applyMultiplier, advanceQuickMoney } = require('./src/gameState');
+const { initializeGame, selectClue, scoreClue, applyMultiplier, advanceQuickMoney, openBuzz, lockBuzz } = require('./src/gameState');
 
 const app = express();
 const server = http.createServer(app);
@@ -46,6 +46,7 @@ const emptyState = () => ({
   players: [],
   boardData: null,
   revealedClue: null,
+  buzz: null,
   quickMoney: {
     finalists: [],
     currentFinalistIndex: 0,
@@ -266,6 +267,7 @@ function publicState() {
     players: gameState.players,
     board: gameState.boardData ? getRoundBoard(gameState.round) : null,
     revealedClue: gameState.revealedClue,
+    buzz: gameState.buzz,
     quickMoneyPrompts: gameState.boardData?.quickMoneyPrompts || [],
     quickMoney: gameState.quickMoney,
     presence: presenceState()
@@ -394,6 +396,14 @@ app.post('/host/select-clue', requireHost, (req, res) => {
   res.sendStatus(200);
 });
 
+app.post('/host/open-buzz', requireHost, (req, res) => {
+  const result = openBuzz(gameState);
+  if (result.error) return res.status(400).send(result.error);
+  gameState = result.state;
+  io.emit('state:update', publicState());
+  res.sendStatus(200);
+});
+
 app.post('/host/score-clue', requireHost, (req, res) => {
   const { playerResults } = req.body;
   const result = scoreClue(gameState, playerResults || {});
@@ -445,6 +455,20 @@ io.on('connection', (socket) => {
 
   io.emit('state:update', publicState());
   socket.emit('state:update', publicState());
+
+  socket.on('player:buzz', ({ playerName, at }) => {
+    const client = connectedClients.get(socket.id);
+    if (!client || client.role !== 'player') return;
+
+    const resolvedName = String(playerName || client.playerName || '').trim();
+    if (!resolvedName || resolvedName !== client.playerName) return;
+
+    const result = lockBuzz(gameState, resolvedName, at);
+    if (result.error) return;
+    gameState = result.state;
+    io.emit('state:update', publicState());
+  });
+
   socket.on('disconnect', () => {
     connectedClients.delete(socket.id);
     io.emit('state:update', publicState());

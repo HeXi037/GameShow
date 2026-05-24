@@ -48,9 +48,33 @@ let gameState = emptyState();
 
 function loadGameData(filePath) {
   const raw = fs.readFileSync(filePath, 'utf-8');
-  const parsed = JSON.parse(raw);
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`Malformed JSON in ${path.basename(filePath)}: ${error.message}`);
+  }
   validateGameData(parsed);
   return parsed;
+}
+
+function resolveDataFileByName(fileName) {
+  if (!fileName) return null;
+  if (!/^[A-Za-z0-9._-]+$/.test(fileName)) {
+    throw new Error('Local data file name contains invalid characters.');
+  }
+
+  const dataDir = path.join(__dirname, 'data');
+  const resolvedPath = path.resolve(dataDir, fileName);
+  if (!resolvedPath.startsWith(path.resolve(dataDir) + path.sep)) {
+    throw new Error('Local data file path is invalid.');
+  }
+
+  if (!fs.existsSync(resolvedPath)) {
+    throw new Error(`Local data file not found: ${fileName}`);
+  }
+
+  return resolvedPath;
 }
 
 function validateGameData(data) {
@@ -116,6 +140,7 @@ app.get('/host', requireHost, (req, res) => {
 });
 
 app.post('/host/setup', requireHost, upload.single('boardFile'), (req, res) => {
+  const uploadedFilePath = req.file ? req.file.path : null;
   try {
     const names = (req.body.playerNames || '')
       .split(',')
@@ -124,8 +149,18 @@ app.post('/host/setup', requireHost, upload.single('boardFile'), (req, res) => {
 
     if (names.length < 2) throw new Error('Add at least two players.');
 
-    const filePath = req.file ? req.file.path : path.join(__dirname, 'data', 'sample-game.json');
-    const boardData = loadGameData(filePath);
+    const localDataFileName = (req.body.localDataFile || '').trim();
+    const localDataFilePath = resolveDataFileByName(localDataFileName);
+
+    const filePath = uploadedFilePath || localDataFilePath || path.join(__dirname, 'data', 'sample-game.json');
+
+    let boardData;
+    try {
+      boardData = loadGameData(filePath);
+    } catch (error) {
+      throw new Error(`Unable to load game data: ${error.message}`);
+    }
+
     initializeBoardState(boardData);
 
     gameState = emptyState();
@@ -138,6 +173,14 @@ app.post('/host/setup', requireHost, upload.single('boardFile'), (req, res) => {
     res.redirect('/host');
   } catch (error) {
     res.status(400).send(error.message);
+  } finally {
+    if (uploadedFilePath) {
+      fs.unlink(uploadedFilePath, (unlinkErr) => {
+        if (unlinkErr) {
+          console.error(`Failed to remove upload temp file ${uploadedFilePath}:`, unlinkErr.message);
+        }
+      });
+    }
   }
 });
 

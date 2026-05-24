@@ -54,10 +54,106 @@ function loadGameData(filePath) {
 }
 
 function validateGameData(data) {
-  const mustHave = ['round1', 'round2', 'quickMoneyPrompts'];
-  mustHave.forEach((key) => {
-    if (!data[key]) throw new Error(`Missing required key: ${key}`);
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error('Board JSON must be an object.');
+  }
+
+  const expectedRoundValues = {
+    round1: [100, 200, 300, 400, 500],
+    round2: [200, 400, 600, 800, 1000]
+  };
+
+  const validateRound = (roundKey) => {
+    const round = data[roundKey];
+    if (!round || typeof round !== 'object' || Array.isArray(round)) {
+      throw new Error(`Missing or invalid ${roundKey}: expected an object.`);
+    }
+
+    if (!Array.isArray(round.categories)) {
+      throw new Error(`Missing or invalid ${roundKey}.categories: expected an array of 5 categories.`);
+    }
+    if (round.categories.length !== 5) {
+      throw new Error(`Invalid ${roundKey}.categories: expected exactly 5 categories, got ${round.categories.length}.`);
+    }
+
+    round.categories.forEach((category, categoryIndex) => {
+      const categoryPath = `${roundKey}.categories[${categoryIndex}]`;
+      if (!category || typeof category !== 'object' || Array.isArray(category)) {
+        throw new Error(`Invalid ${categoryPath}: expected an object.`);
+      }
+
+      if (typeof category.name !== 'string' || !category.name.trim()) {
+        throw new Error(`Invalid ${categoryPath}.name: expected a non-empty string.`);
+      }
+
+      if (!Array.isArray(category.clues)) {
+        throw new Error(`Invalid ${categoryPath}.clues: expected an array of 5 clues.`);
+      }
+      if (category.clues.length !== 5) {
+        throw new Error(`Invalid ${categoryPath}.clues: expected exactly 5 clues, got ${category.clues.length}.`);
+      }
+
+      category.clues.forEach((clue, clueIndex) => {
+        const cluePath = `${categoryPath}.clues[${clueIndex}]`;
+        if (!clue || typeof clue !== 'object' || Array.isArray(clue)) {
+          throw new Error(`Invalid ${cluePath}: expected an object.`);
+        }
+
+        if (typeof clue.value !== 'number' || Number.isNaN(clue.value)) {
+          throw new Error(`Invalid ${cluePath}.value: expected a numeric value.`);
+        }
+        if (typeof clue.answer !== 'string' || !clue.answer.trim()) {
+          throw new Error(`Invalid ${cluePath}.answer: expected a non-empty string.`);
+        }
+        if (typeof clue.question !== 'string' || !clue.question.trim()) {
+          throw new Error(`Invalid ${cluePath}.question: expected a non-empty string.`);
+        }
+
+        const expectedValue = expectedRoundValues[roundKey][clueIndex];
+        if (clue.value !== expectedValue) {
+          throw new Error(
+            `Invalid ${cluePath}.value: expected ${expectedValue} for clue index ${clueIndex} in ${roundKey}.`
+          );
+        }
+      });
+    });
+  };
+
+  validateRound('round1');
+  validateRound('round2');
+
+  if (!Array.isArray(data.quickMoneyPrompts)) {
+    throw new Error('Missing or invalid quickMoneyPrompts: expected an array of 5 strings.');
+  }
+  if (data.quickMoneyPrompts.length !== 5) {
+    throw new Error(
+      `Invalid quickMoneyPrompts: expected exactly 5 prompts, got ${data.quickMoneyPrompts.length}.`
+    );
+  }
+  data.quickMoneyPrompts.forEach((prompt, promptIndex) => {
+    if (typeof prompt !== 'string' || !prompt.trim()) {
+      throw new Error(`Invalid quickMoneyPrompts[${promptIndex}]: expected a non-empty string.`);
+    }
   });
+
+  const multiplier = data.round2.mogulMultiplier;
+  if (!multiplier || typeof multiplier !== 'object' || Array.isArray(multiplier)) {
+    throw new Error('Missing or invalid round2.mogulMultiplier: expected an object.');
+  }
+
+  if (!Number.isInteger(multiplier.categoryIndex) || multiplier.categoryIndex < 0 || multiplier.categoryIndex > 4) {
+    throw new Error('Invalid round2.mogulMultiplier.categoryIndex: expected an integer from 0 to 4.');
+  }
+  if (!Number.isInteger(multiplier.clueIndex) || multiplier.clueIndex < 0 || multiplier.clueIndex > 4) {
+    throw new Error('Invalid round2.mogulMultiplier.clueIndex: expected an integer from 0 to 4.');
+  }
+
+  const multiplierCategory = data.round2.categories[multiplier.categoryIndex];
+  if (!multiplierCategory || !multiplierCategory.clues[multiplier.clueIndex]) {
+    throw new Error(
+      `Invalid round2.mogulMultiplier reference: no clue at categoryIndex ${multiplier.categoryIndex}, clueIndex ${multiplier.clueIndex}.`
+    );
+  }
 }
 
 function initializeBoardState(data) {

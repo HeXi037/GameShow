@@ -57,6 +57,28 @@ const emptyState = () => ({
 });
 
 let gameState = emptyState();
+const connectedClients = new Map();
+
+function normalizeClientRole(rawRole) {
+  return rawRole === 'host' || rawRole === 'viewer' ? rawRole : null;
+}
+
+function presenceState() {
+  let hostCount = 0;
+  let viewerCount = 0;
+
+  connectedClients.forEach((role) => {
+    if (role === 'host') hostCount += 1;
+    if (role === 'viewer') viewerCount += 1;
+  });
+
+  return {
+    totalConnections: connectedClients.size,
+    hostConnections: hostCount,
+    viewerConnections: viewerCount,
+    hostConnected: hostCount > 0
+  };
+}
 
 function loadGameData(filePath) {
   const raw = fs.readFileSync(filePath, 'utf-8');
@@ -222,7 +244,8 @@ function publicState() {
     players: gameState.players,
     board: gameState.boardData ? getRoundBoard(gameState.round) : null,
     revealedClue: gameState.revealedClue,
-    quickMoney: gameState.quickMoney
+    quickMoney: gameState.quickMoney,
+    presence: presenceState()
   };
 }
 
@@ -447,8 +470,15 @@ app.post('/host/quick-money/submit', requireHost, (req, res) => {
 });
 
 io.on('connection', (socket) => {
+  const role = normalizeClientRole(socket.handshake.query?.role);
+  connectedClients.set(socket.id, role);
+
+  io.emit('state:update', publicState());
   socket.emit('state:update', publicState());
-  socket.on('disconnect', () => {});
+  socket.on('disconnect', () => {
+    connectedClients.delete(socket.id);
+    io.emit('state:update', publicState());
+  });
 });
 
 server.listen(PORT, () => {

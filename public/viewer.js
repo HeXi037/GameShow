@@ -1,4 +1,4 @@
-const socket = io();
+const socket = io({ query: { role: 'viewer' } });
 
 function renderScoreboard(players) {
   const rows = players.map((p) => `<tr><td>${p.name}</td><td>${p.score}</td></tr>`).join('');

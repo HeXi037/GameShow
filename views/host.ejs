@@ -10,6 +10,13 @@
   <main class="layout">
     <section>
       <h1>Host Control Panel</h1>
+      <div class="card">
+        <h3>Connection Status</h3>
+        <p>Socket: <strong id="hostConnectionStatus">Connecting...</strong></p>
+        <p>Host presence: <strong id="hostPresenceStatus">Unknown</strong></p>
+        <p>Connected viewers: <strong id="viewerCount">0</strong></p>
+        <ul id="connectionNotices"></ul>
+      </div>
       <form method="post" action="/host/setup" enctype="multipart/form-data" class="card">
         <label>Player names (comma separated)</label>
         <input name="playerNames" placeholder="Ludwig, QT, Slime, Atrioc" required />

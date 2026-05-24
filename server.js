@@ -49,6 +49,7 @@ const emptyState = () => ({
     finalists: [],
     currentFinalistIndex: 0,
     promptIndex: 0,
+    turnActive: false,
     answers: {},
     timerEndsAt: null,
     active: false,
@@ -232,6 +233,18 @@ function sortPlayers() {
   gameState.players.sort((a, b) => b.score - a.score);
 }
 
+function initializeQuickMoney(topN = 2) {
+  const finalists = [...gameState.players].slice(0, Number(topN) || 2).map((p) => p.name);
+  gameState.quickMoney.finalists = finalists;
+  gameState.quickMoney.currentFinalistIndex = 0;
+  gameState.quickMoney.promptIndex = 0;
+  gameState.quickMoney.turnActive = false;
+  gameState.quickMoney.answers = {};
+  gameState.quickMoney.timerEndsAt = null;
+  gameState.quickMoney.active = finalists.length > 0;
+  gameState.quickMoney.completed = finalists.length === 0;
+}
+
 function allCluesUsed(round) {
   const board = getRoundBoard(round);
   return board.categories.every((cat) => cat.clues.every((clue) => clue.used));
@@ -244,6 +257,7 @@ function publicState() {
     players: gameState.players,
     board: gameState.boardData ? getRoundBoard(gameState.round) : null,
     revealedClue: gameState.revealedClue,
+    quickMoneyPrompts: gameState.boardData?.quickMoneyPrompts || [],
     quickMoney: gameState.quickMoney,
     presence: presenceState()
   };
@@ -409,8 +423,7 @@ app.post('/host/score-clue', requireHost, (req, res) => {
       gameState.phase = 'round2';
     } else {
       gameState.phase = 'quickMoney';
-      gameState.quickMoney.finalists = [...gameState.players].slice(0, 2).map((p) => p.name);
-      gameState.quickMoney.active = true;
+      initializeQuickMoney(2);
     }
   }
 
@@ -441,8 +454,7 @@ app.post('/host/mogul-multiplier', requireHost, (req, res) => {
 
   if (allCluesUsed(gameState.round)) {
     gameState.phase = 'quickMoney';
-    gameState.quickMoney.finalists = [...gameState.players].slice(0, 2).map((p) => p.name);
-    gameState.quickMoney.active = true;
+    initializeQuickMoney(2);
   }
 
   io.emit('state:update', publicState());
@@ -450,20 +462,55 @@ app.post('/host/mogul-multiplier', requireHost, (req, res) => {
 });
 
 app.post('/host/quick-money/start-turn', requireHost, (req, res) => {
+  if (gameState.phase !== 'quickMoney') return res.status(400).send('Quick Money is not active.');
+  if (gameState.quickMoney.completed) return res.status(400).send('Quick Money is already complete.');
   const { seconds } = req.body;
+  gameState.quickMoney.turnActive = true;
   gameState.quickMoney.timerEndsAt = Date.now() + Number(seconds || 20) * 1000;
   io.emit('state:update', publicState());
   res.sendStatus(200);
 });
 
 app.post('/host/quick-money/submit', requireHost, (req, res) => {
+  if (gameState.phase !== 'quickMoney') return res.status(400).send('Quick Money is not active.');
+  if (gameState.quickMoney.completed) return res.status(400).send('Quick Money is already complete.');
+
   const { playerName, promptIndex, answer, points } = req.body;
+  const parsedPromptIndex = Number(promptIndex);
+  const activeFinalist = gameState.quickMoney.finalists[gameState.quickMoney.currentFinalistIndex];
+  const activePromptIndex = gameState.quickMoney.promptIndex;
+
+  if (!activeFinalist) return res.status(400).send('No active finalist.');
+  if (!gameState.quickMoney.turnActive) return res.status(400).send('Turn has not started.');
+  if (playerName !== activeFinalist) return res.status(400).send('Submission is not for the active finalist.');
+  if (parsedPromptIndex !== activePromptIndex) return res.status(400).send('Submission is not for the active prompt.');
+
   if (!gameState.quickMoney.answers[playerName]) gameState.quickMoney.answers[playerName] = [];
-  gameState.quickMoney.answers[playerName].push({ promptIndex: Number(promptIndex), answer, points: Number(points) });
+  const alreadyAnswered = gameState.quickMoney.answers[playerName].some((entry) => entry.promptIndex === parsedPromptIndex);
+  if (alreadyAnswered) return res.status(400).send('Duplicate submission for this finalist prompt.');
+
+  gameState.quickMoney.answers[playerName].push({ promptIndex: parsedPromptIndex, answer, points: Number(points) });
 
   const player = gameState.players.find((p) => p.name === playerName);
   if (player) player.score += Number(points);
   sortPlayers();
+
+  const isLastPromptForFinalist = gameState.quickMoney.promptIndex >= 4;
+  if (isLastPromptForFinalist) {
+    gameState.quickMoney.promptIndex = 0;
+    gameState.quickMoney.currentFinalistIndex += 1;
+    gameState.quickMoney.turnActive = false;
+    gameState.quickMoney.timerEndsAt = null;
+  } else {
+    gameState.quickMoney.promptIndex += 1;
+  }
+
+  if (gameState.quickMoney.currentFinalistIndex >= gameState.quickMoney.finalists.length) {
+    gameState.quickMoney.completed = true;
+    gameState.quickMoney.active = false;
+    gameState.quickMoney.turnActive = false;
+    gameState.quickMoney.timerEndsAt = null;
+  }
 
   io.emit('state:update', publicState());
   res.sendStatus(200);

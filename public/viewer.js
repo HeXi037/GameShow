@@ -26,7 +26,29 @@ function renderBoard(state) {
   revealed.innerHTML = state.revealedClue ? `<h3>Answer</h3><p>${state.revealedClue.answer}</p>` : '';
 }
 
+function renderQuickMoneyPhase(state) {
+  let panel = document.getElementById('quickMoneyPanel');
+  if (!panel) {
+    panel = document.createElement('section');
+    panel.id = 'quickMoneyPanel';
+    const board = document.getElementById('board');
+    board.parentNode.insertBefore(panel, board.nextSibling);
+  }
+
+  if (state.phase !== 'quickMoney') {
+    panel.innerHTML = '';
+    return;
+  }
+
+  const finalistName = state.quickMoney?.finalists?.[state.quickMoney.currentFinalistIndex] || '—';
+  const promptIndex = Number(state.quickMoney?.promptIndex || 0);
+  const promptText = state.quickMoneyPrompts?.[promptIndex] || 'Prompt unavailable';
+  const revealPolicy = state.quickMoney?.turnActive ? 'Answers masked until host scores.' : 'Waiting for host to begin turn.';
+  panel.innerHTML = `<h3>Quick Money</h3><p><strong>Active finalist:</strong> ${finalistName}</p><p><strong>Prompt ${promptIndex + 1} of 5:</strong> ${promptText}</p><p><strong>Answer reveal policy:</strong> ${revealPolicy}</p>`;
+}
+
 socket.on('state:update', (state) => {
   renderScoreboard(state.players || []);
   renderBoard(state);
+  renderQuickMoneyPhase(state);
 });

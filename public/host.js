@@ -54,6 +54,11 @@ function showReconnectNotice(message) {
   list.prepend(item);
 }
 
+function showOperationalNotice(message, level = 'info') {
+  const prefix = level === 'warning' ? '⚠️' : 'ℹ️';
+  showReconnectNotice(`${prefix} ${message}`);
+}
+
 function renderScoreboard(players) {
   const rows = players.map((p) => `<tr><td>${p.name}</td><td>${p.score}</td></tr>`).join('');
   document.getElementById('scoreboard').innerHTML = `<table><thead><tr><th>Player</th><th>Score</th></tr></thead><tbody>${rows}</tbody></table>`;
@@ -204,6 +209,10 @@ socket.io.on('reconnect', () => {
   if (state.quickMoney?.timerEndsAt && state.quickMoney.timerEndsAt > now) {
     showReconnectNotice('Reconnected during an active Quick Money timer. Verify remaining time before continuing.');
   }
+});
+
+socket.on('host:notice', ({ message, level }) => {
+  showOperationalNotice(message, level);
 });
 
 renderScoreboard(state.players || []);

@@ -12,6 +12,7 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
+const LOCK_HOLD_ON_DISCONNECT_MS = 10000;
 const isDevelopment = process.env.NODE_ENV === 'development';
 const HOST_PASSWORD = process.env.HOST_PASSWORD || (isDevelopment ? 'mogulhost' : null);
 
@@ -60,6 +61,7 @@ const emptyState = () => ({
 });
 
 let gameState = emptyState();
+let lockReleaseTimer = null;
 const connectedClients = new Map();
 let joinIdentity = {
   codesByPlayer: new Map(),
@@ -306,6 +308,36 @@ function publicState() {
     presence: presenceState(),
     joinCodes
   };
+}
+
+function clearLockReleaseTimer() {
+  if (lockReleaseTimer) {
+    clearTimeout(lockReleaseTimer);
+    lockReleaseTimer = null;
+  }
+}
+
+function emitHostNotice(message, level = 'info') {
+  io.emit('host:notice', {
+    level,
+    message,
+    at: Date.now()
+  });
+}
+
+function scheduleWinnerLockRelease(playerName) {
+  clearLockReleaseTimer();
+  lockReleaseTimer = setTimeout(() => {
+    if (!gameState.buzz?.lockedBy || gameState.buzz.lockedBy !== playerName) return;
+    const result = resetBuzz(gameState);
+    if (result.error) return;
+    gameState = result.state;
+    emitHostNotice(
+      `Buzz lock for ${playerName} auto-reset after ${Math.floor(LOCK_HOLD_ON_DISCONNECT_MS / 1000)}s disconnect. Manual re-open may be needed.`,
+      'warning'
+    );
+    io.emit('state:update', publicState());
+  }, LOCK_HOLD_ON_DISCONNECT_MS);
 }
 
 
@@ -570,6 +602,7 @@ io.on('connection', (socket) => {
     }
 
     gameState = result.state;
+    clearLockReleaseTimer();
     io.emit('buzz:locked', {
       playerName: gameState.buzz.lockedBy,
       lockedAt: gameState.buzz.lockedAt
@@ -586,12 +619,44 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     const client = connectedClients.get(socket.id);
+    const activeBuzz = Boolean(gameState.revealedClue && gameState.phase !== 'quickMoney' && gameState.buzz);
+    const isPlayer = client?.role === 'player' && client?.playerName;
+    const playerNameForNotice = client?.playerName;
+
+    if (activeBuzz && isPlayer) {
+      if (gameState.buzz?.lockedBy === playerNameForNotice) {
+        emitHostNotice(
+          `${playerNameForNotice} disconnected while holding buzz lock. Lock retained for ${Math.floor(LOCK_HOLD_ON_DISCONNECT_MS / 1000)}s.`,
+          'warning'
+        );
+        io.emit('player:status', {
+          kind: 'locked-winner-disconnected',
+          playerName: playerNameForNotice,
+          holdMs: LOCK_HOLD_ON_DISCONNECT_MS
+        });
+        scheduleWinnerLockRelease(playerNameForNotice);
+      } else if (gameState.buzz?.open && !gameState.buzz?.lockedBy) {
+        emitHostNotice(`${playerNameForNotice} disconnected during open buzz. Manual intervention usually not required.`, 'info');
+      }
+    }
+
     if (client?.playerName && joinIdentity.activeSocketByPlayer.get(client.playerName) === socket.id) {
       joinIdentity.activeSocketByPlayer.delete(client.playerName);
     }
     connectedClients.delete(socket.id);
     io.emit('state:update', publicState());
   });
+
+  if (role === 'player' && playerName && gameState.revealedClue && gameState.phase !== 'quickMoney') {
+    if (gameState.buzz?.lockedBy === playerName) {
+      clearLockReleaseTimer();
+      emitHostNotice(`${playerName} reconnected and still holds the buzz lock. Host should continue scoring flow.`, 'info');
+      socket.emit('player:status', { kind: 'lock-restored', playerName });
+    } else if (gameState.buzz?.open && !gameState.buzz?.lockedBy) {
+      emitHostNotice(`${playerName} reconnected during open buzz and is eligible to buzz again.`, 'info');
+      socket.emit('player:status', { kind: 'eligibility-restored', playerName });
+    }
+  }
 });
 
 server.listen(PORT, () => {

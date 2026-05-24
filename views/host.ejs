@@ -1,0 +1,62 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Host Panel</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="layout">
+    <section>
+      <h1>Host Control Panel</h1>
+      <form method="post" action="/host/setup" enctype="multipart/form-data" class="card">
+        <label>Player names (comma separated)</label>
+        <input name="playerNames" placeholder="Ludwig, QT, Slime, Atrioc" required />
+        <label>Custom game JSON (optional)</label>
+        <input type="file" name="boardFile" accept="application/json" />
+        <button type="submit">Start New Game</button>
+      </form>
+
+      <div class="card">
+        <h3>Current Board Actions</h3>
+        <div id="hostBoard"></div>
+      </div>
+
+      <div class="card">
+        <h3>Revealed Answer Scoring</h3>
+        <div id="hostReveal"></div>
+      </div>
+
+      <div class="card">
+        <h3>Mogul Multiplier (Round 2)</h3>
+        <form id="multiplierForm">
+          <input name="playerName" placeholder="Player Name" required />
+          <input name="wager" type="number" min="0" required />
+          <select name="correct"><option value="true">Correct</option><option value="false">Incorrect</option></select>
+          <button type="submit">Apply Wager</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h3>Quick Money Controls</h3>
+        <form id="quickTimer"><input type="number" name="seconds" value="20" /><button type="submit">Start Timer</button></form>
+        <form id="quickSubmit">
+          <input name="playerName" placeholder="Finalist" required />
+          <input name="promptIndex" type="number" min="0" max="4" required />
+          <input name="answer" placeholder="Answer" required />
+          <input name="points" type="number" min="1" max="10" required />
+          <button type="submit">Add Quick Money Score</button>
+        </form>
+      </div>
+    </section>
+    <aside>
+      <h2>Live Scoreboard</h2>
+      <div id="scoreboard"></div>
+    </aside>
+  </main>
+  <script>window.__INITIAL_STATE__ = <%- JSON.stringify(state) %>;</script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/host.js"></script>
+</body>
+</html>

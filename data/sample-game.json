@@ -1,0 +1,68 @@
+{
+  "round1": {
+    "categories": [
+      { "name": "Internet History", "clues": [
+        { "value": 100, "answer": "This website launched in 2005 and popularized viral clips.", "question": "What is YouTube?" },
+        { "value": 200, "answer": "The founder of Facebook currently uses the name Meta for his company.", "question": "Who is Mark Zuckerberg?" },
+        { "value": 300, "answer": "A social platform once limited posts to 140 characters.", "question": "What is Twitter/X?" },
+        { "value": 400, "answer": "This orange site popularized upvotes and subcommunities.", "question": "What is Reddit?" },
+        { "value": 500, "answer": "The term for fake online outrage and baiting reactions.", "question": "What is trolling?" }
+      ]},
+      { "name": "Streamer Trivia", "clues": [
+        { "value": 100, "answer": "A person who broadcasts live gameplay on Twitch.", "question": "What is a streamer?" },
+        { "value": 200, "answer": "The online tip system where viewers support creators.", "question": "What are donations?" },
+        { "value": 300, "answer": "A live collaboration where multiple streamers join one call.", "question": "What is a collab stream?" },
+        { "value": 400, "answer": "The phrase for ending a stream and sending viewers elsewhere.", "question": "What is a raid?" },
+        { "value": 500, "answer": "A one-time event where creators compete in games live.", "question": "What is a streamer tournament?" }
+      ]},
+      { "name": "Memes", "clues": [
+        { "value": 100, "answer": "A captioned image copied and remixed online.", "question": "What is a meme?" },
+        { "value": 200, "answer": "A looped silent animation often used for reactions.", "question": "What is a GIF?" },
+        { "value": 300, "answer": "A phrase repeatedly copied into chat.", "question": "What is copypasta?" },
+        { "value": 400, "answer": "An emote word meaning excitement in Twitch chat.", "question": "What is Pog?" },
+        { "value": 500, "answer": "A meme template featuring a distracted man and two women.", "question": "What is Distracted Boyfriend?" }
+      ]},
+      { "name": "Gaming", "clues": [
+        { "value": 100, "answer": "A game played by many users online at once.", "question": "What is multiplayer?" },
+        { "value": 200, "answer": "A top-tier competitive rank in many games.", "question": "What is Grandmaster (or equivalent)?" },
+        { "value": 300, "answer": "The acronym for first-person shooter.", "question": "What is FPS?" },
+        { "value": 400, "answer": "A speedrun skips boundaries by exploiting this.", "question": "What is a glitch?" },
+        { "value": 500, "answer": "A game update that rebalances characters and weapons.", "question": "What is a patch?" }
+      ]},
+      { "name": "Odds & Ends", "clues": [
+        { "value": 100, "answer": "The host asks this before revealing a clue in a trivia show.", "question": "What is 'Choose a category'?" },
+        { "value": 200, "answer": "The person controlling the game flow and score decisions.", "question": "Who is the host?" },
+        { "value": 300, "answer": "The act of risking points to gain more in one clue.", "question": "What is a wager?" },
+        { "value": 400, "answer": "A tie-breaking question used when scores are even.", "question": "What is a tiebreaker?" },
+        { "value": 500, "answer": "The final segment where finalists answer rapidly.", "question": "What is Quick Money?" }
+      ]}
+    ]
+  },
+  "round2": {
+    "mogulMultiplier": { "categoryIndex": 2, "clueIndex": 3 },
+    "categories": [
+      { "name": "Internet History", "clues": [
+        { "value": 200, "answer": "The browser created by Mozilla.", "question": "What is Firefox?" }, { "value": 400, "answer": "The protocol at the start of secure URLs.", "question": "What is HTTPS?" }, { "value": 600, "answer": "A server-request flood attack acronym.", "question": "What is DDoS?" }, { "value": 800, "answer": "A decentralized transaction ledger.", "question": "What is blockchain?" }, { "value": 1000, "answer": "The system translating domain names to IP addresses.", "question": "What is DNS?" }
+      ]},
+      { "name": "Streamer Trivia", "clues": [
+        { "value": 200, "answer": "Another word for concurrent viewers.", "question": "What is CCV?" }, { "value": 400, "answer": "A stream segment where viewers ask questions.", "question": "What is Q&A?" }, { "value": 600, "answer": "A long form event broadcast continuously for days.", "question": "What is a subathon?" }, { "value": 800, "answer": "A paid badge that supports a channel monthly.", "question": "What is a subscription?" }, { "value": 1000, "answer": "Software often used for live scene switching.", "question": "What is OBS?" }
+      ]},
+      { "name": "Memes", "clues": [
+        { "value": 200, "answer": "A reaction image from a famous TV host shrugging.", "question": "What is a shrug meme?" }, { "value": 400, "answer": "A meme format showing an expanding brain.", "question": "What is Galaxy Brain?" }, { "value": 600, "answer": "A phrase meaning intentionally awkward humor.", "question": "What is cringe?" }, { "value": 800, "answer": "Special clue: host can trigger Mogul Multiplier here.", "question": "What is the Mogul Multiplier clue?" }, { "value": 1000, "answer": "A meme chart with changing labels and one bell curve.", "question": "What is the IQ Bell Curve meme?" }
+      ]},
+      { "name": "Gaming", "clues": [
+        { "value": 200, "answer": "A category where players fight computer enemies.", "question": "What is PvE?" }, { "value": 400, "answer": "A category where players fight other players.", "question": "What is PvP?" }, { "value": 600, "answer": "The delay between your input and server response.", "question": "What is latency?" }, { "value": 800, "answer": "A game mode where teams remove character choices.", "question": "What is draft/ban?" }, { "value": 1000, "answer": "A game economy term for strongest current strategy.", "question": "What is meta?" }
+      ]},
+      { "name": "Odds & Ends", "clues": [
+        { "value": 200, "answer": "The display of contestant points.", "question": "What is the scoreboard?" }, { "value": 400, "answer": "A host-only page that controls all game flow.", "question": "What is an admin panel?" }, { "value": 600, "answer": "Updates sent instantly through persistent connections.", "question": "What are WebSockets?" }, { "value": 800, "answer": "A small data format used for categories and clues.", "question": "What is JSON?" }, { "value": 1000, "answer": "The open-source runtime used for the backend.", "question": "What is Node.js?" }
+      ]}
+    ]
+  },
+  "quickMoneyPrompts": [
+    "Name a snack people eat during streams.",
+    "Name something a host says to start a round.",
+    "Name a reason viewers clip a moment.",
+    "Name a common Twitch chat emote.",
+    "Name something that can go wrong on live stream."
+  ]
+}

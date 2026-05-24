@@ -456,18 +456,56 @@ io.on('connection', (socket) => {
   io.emit('state:update', publicState());
   socket.emit('state:update', publicState());
 
-  socket.on('player:buzz', ({ playerName, at }) => {
+  const handleBuzzAttempt = ({ playerName } = {}) => {
     const client = connectedClients.get(socket.id);
-    if (!client || client.role !== 'player') return;
+    if (!client || client.role !== 'player' || !client.playerName) {
+      socket.emit('buzz:rejected', { reason: 'unauthenticated' });
+      return;
+    }
 
     const resolvedName = String(playerName || client.playerName || '').trim();
-    if (!resolvedName || resolvedName !== client.playerName) return;
+    if (!resolvedName || resolvedName !== client.playerName) {
+      socket.emit('buzz:rejected', { reason: 'identity-mismatch' });
+      return;
+    }
 
-    const result = lockBuzz(gameState, resolvedName, at);
-    if (result.error) return;
+    if (!gameState.players.some((player) => player.name === resolvedName)) {
+      socket.emit('buzz:rejected', { reason: 'unrecognized-contestant' });
+      return;
+    }
+
+    if (!gameState.buzz?.open) {
+      socket.emit('buzz:rejected', { reason: 'buzz-closed' });
+      return;
+    }
+
+    if (gameState.buzz.lockedBy) {
+      socket.emit('buzz:rejected', { reason: 'already-locked', lockedBy: gameState.buzz.lockedBy });
+      return;
+    }
+
+    const attemptedAt = Date.now();
+    const result = lockBuzz(gameState, resolvedName, attemptedAt);
+
+    if (result.error || !result.state?.buzz?.lockedBy) {
+      socket.emit('buzz:rejected', { reason: result.error || 'lock-failed' });
+      return;
+    }
+
     gameState = result.state;
+    io.emit('buzz:locked', {
+      playerName: gameState.buzz.lockedBy,
+      lockedAt: gameState.buzz.lockedAt
+    });
+    socket.broadcast.emit('buzz:rejected', {
+      reason: 'already-locked',
+      lockedBy: gameState.buzz.lockedBy
+    });
     io.emit('state:update', publicState());
-  });
+  };
+
+  socket.on('buzz:attempt', handleBuzzAttempt);
+  socket.on('player:buzz', handleBuzzAttempt);
 
   socket.on('disconnect', () => {
     connectedClients.delete(socket.id);

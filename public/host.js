@@ -13,6 +13,16 @@ function renderPresence() {
   const viewerEl = document.getElementById('viewerCount');
   if (viewerEl) viewerEl.textContent = String(viewerCount);
 
+  const playerCount = state.presence?.playerConnections || 0;
+  const playerCountEl = document.getElementById('playerConnectionCount');
+  if (playerCountEl) playerCountEl.textContent = String(playerCount);
+
+  const playerSessions = document.getElementById('playerSessions');
+  if (playerSessions) {
+    const names = state.presence?.playerNames || [];
+    playerSessions.textContent = names.length ? names.join(', ') : 'None';
+  }
+
   const hostPresentEl = document.getElementById('hostPresenceStatus');
   if (hostPresentEl) {
     hostPresentEl.textContent = state.presence?.hostConnected ? 'Connected' : 'Offline';

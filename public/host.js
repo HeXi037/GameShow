@@ -74,23 +74,33 @@ function renderReveal() {
   }
 
   const isMultiplier = Boolean(state.revealedClue.isMogulMultiplier);
-  const buzz = state.buzz || { open: false, lockedBy: null };
-  const buzzStatus = buzz.lockedBy ? `Locked by ${buzz.lockedBy}` : (buzz.open ? 'Open' : 'Closed');
+  const buzz = state.buzz || { open: false, lockedBy: null, lockedAt: null };
+  const buzzState = buzz.lockedBy ? 'Locked' : (buzz.open ? 'Open' : 'Closed');
+  const buzzStatus = buzz.lockedBy ? `Locked by ${buzz.lockedBy}` : buzzState;
+  const lockTime = buzz.lockedAt ? new Date(buzz.lockedAt).toLocaleTimeString() : '—';
+  const winnerPanel = `<p><b>Buzz Status:</b> ${buzzState}</p><p><b>Winner:</b> ${buzz.lockedBy || 'None'}</p><p><b>Lock Time:</b> ${lockTime}</p>`;
   const indicator = isMultiplier ? '<p><strong>⚡ Mogul Multiplier clue is active.</strong></p>' : '';
 
   if (isMultiplier) {
     multiplierCard.hidden = false;
-    el.innerHTML = `<p><b>Answer:</b> ${state.revealedClue.answer}</p><p><b>Expected question:</b> ${state.revealedClue.question}</p><p><b>Buzz:</b> ${buzzStatus}</p>${indicator}`;
+    el.innerHTML = `<p><b>Answer:</b> ${state.revealedClue.answer}</p><p><b>Expected question:</b> ${state.revealedClue.question}</p><p><b>Buzz:</b> ${buzzStatus}</p>${winnerPanel}${indicator}`;
     return;
   }
 
   multiplierCard.hidden = true;
   const fields = state.players.map((p) => `<label>${p.name}<select name="${p.name}"><option value="skip">Skip</option><option value="correct">Correct</option><option value="incorrect">Incorrect</option></select></label>`).join('');
-  el.innerHTML = `<p><b>Answer:</b> ${state.revealedClue.answer}</p><p><b>Expected question:</b> ${state.revealedClue.question}</p><p><b>Buzz:</b> ${buzzStatus}</p>${indicator}<button id="openBuzz" type="button" ${buzz.open || buzz.lockedBy ? 'disabled' : ''}>Open Buzz</button><form id="scoreForm">${fields}<button type="submit">Apply Scores</button></form>`;
+  el.innerHTML = `<p><b>Answer:</b> ${state.revealedClue.answer}</p><p><b>Expected question:</b> ${state.revealedClue.question}</p><p><b>Buzz:</b> ${buzzStatus}</p>${winnerPanel}${indicator}<div class="controls"><button id="openBuzz" type="button" ${buzz.open || buzz.lockedBy ? 'disabled' : ''}>Open Buzz</button><button id="resetBuzz" type="button" ${!buzz.lockedBy && !buzz.open ? 'disabled' : ''}>Reset Buzz</button></div><form id="scoreForm">${fields}<button type="submit" ${!buzz.lockedBy ? 'disabled' : ''}>Apply Scores</button></form>`;
   const openBuzzButton = document.getElementById('openBuzz');
   if (openBuzzButton) {
     openBuzzButton.addEventListener('click', async () => {
       await post('/host/open-buzz', {});
+    });
+  }
+
+  const resetBuzzButton = document.getElementById('resetBuzz');
+  if (resetBuzzButton) {
+    resetBuzzButton.addEventListener('click', async () => {
+      await post('/host/reset-buzz', {});
     });
   }
 

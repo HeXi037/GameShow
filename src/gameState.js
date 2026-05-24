@@ -181,7 +181,24 @@ function advanceQuickMoney(state, { playerName, promptIndex, answer, points }) {
 function openBuzz(state) {
   if (!state.revealedClue) return { state, error: 'No active clue.' };
   if (!state.buzz) return { state, error: 'Buzz state is not initialized for this clue.' };
+  if (state.buzz.lockedBy) return { state, error: 'Buzz is locked. Reset buzz before reopening.' };
   return { state: { ...state, buzz: { ...state.buzz, open: true } } };
+}
+
+function resetBuzz(state) {
+  if (!state.revealedClue) return { state, error: 'No active clue.' };
+  if (!state.buzz) return { state, error: 'Buzz state is not initialized for this clue.' };
+  return {
+    state: {
+      ...state,
+      buzz: {
+        ...state.buzz,
+        open: false,
+        lockedBy: null,
+        lockedAt: null
+      }
+    }
+  };
 }
 
 function lockBuzz(state, playerName, at = Date.now()) {
@@ -204,4 +221,4 @@ function lockBuzz(state, playerName, at = Date.now()) {
   };
 }
 
-module.exports = { initializeGame, selectClue, scoreClue, applyMultiplier, advanceQuickMoney, initializeQuickMoney, allCluesUsed, openBuzz, lockBuzz };
+module.exports = { initializeGame, selectClue, scoreClue, applyMultiplier, advanceQuickMoney, initializeQuickMoney, allCluesUsed, openBuzz, resetBuzz, lockBuzz };

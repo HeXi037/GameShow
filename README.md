@@ -60,6 +60,13 @@ The server now:
 }
 ```
 
+
+## Quick Money host input constraints
+- **Start turn timer (`POST /host/quick-money/start-turn`)**: `seconds` must be an integer from **5 to 120** (inclusive). Invalid values return HTTP `400`.
+- **Prompt submission (`POST /host/quick-money/submit`)**:
+  - `answer` must be a string with non-whitespace content (trimmed before storage/scoring).
+  - `points` must be a finite number from **0 to 1000** (inclusive). Invalid values return HTTP `400`.
+
 ## Notes
 - If a client disconnects/reconnects, the server emits current state on connection so they recover gracefully.
 - `round2.mogulMultiplier` identifies where the special wager clue can be placed. The host can apply wagers from the host panel.

@@ -166,6 +166,56 @@ test('startQuickMoneyTurn validates quick money phase and completion state', () 
   assert.equal(startQuickMoneyTurn(completedState, 20).error, 'Quick Money is already complete.');
 });
 
+
+test('advanceQuickMoney rejects malformed answer payloads', () => {
+  let state = initializeGame({ playerNames: ['A', 'B'], boardData: makeBoard() });
+  state.phase = 'quickMoney';
+  state.quickMoney = {
+    ...state.quickMoney,
+    finalists: ['A'],
+    currentFinalistIndex: 0,
+    promptIndex: 0,
+    turnActive: true,
+    active: true,
+    completed: false,
+    answers: {}
+  };
+
+  assert.equal(advanceQuickMoney(state, { playerName: 'A', promptIndex: 0, answer: '', points: 10 }).error, 'Answer must be a non-empty string.');
+  assert.equal(advanceQuickMoney(state, { playerName: 'A', promptIndex: 0, answer: '   ', points: 10 }).error, 'Answer must be a non-empty string.');
+  assert.equal(advanceQuickMoney(state, { playerName: 'A', promptIndex: 0, answer: 123, points: 10 }).error, 'Answer must be a non-empty string.');
+});
+
+test('advanceQuickMoney rejects invalid points values', () => {
+  let state = initializeGame({ playerNames: ['A', 'B'], boardData: makeBoard() });
+  state.phase = 'quickMoney';
+  state.quickMoney = {
+    ...state.quickMoney,
+    finalists: ['A'],
+    currentFinalistIndex: 0,
+    promptIndex: 0,
+    turnActive: true,
+    active: true,
+    completed: false,
+    answers: {}
+  };
+
+  assert.equal(advanceQuickMoney(state, { playerName: 'A', promptIndex: 0, answer: 'ok', points: Number.NaN }).error, 'Points must be a finite number.');
+  assert.equal(advanceQuickMoney(state, { playerName: 'A', promptIndex: 0, answer: 'ok', points: -1 }).error, 'Points must be between 0 and 1000.');
+  assert.equal(advanceQuickMoney(state, { playerName: 'A', promptIndex: 0, answer: 'ok', points: 999999 }).error, 'Points must be between 0 and 1000.');
+});
+
+test('startQuickMoneyTurn caller-side seconds validation bounds', () => {
+  const validBounds = [5, 120];
+  let state = initializeGame({ playerNames: ['A', 'B'], boardData: makeBoard() });
+  state = { ...state, phase: 'quickMoney', quickMoney: { ...state.quickMoney, completed: false } };
+
+  validBounds.forEach((seconds) => {
+    const result = startQuickMoneyTurn(state, seconds, 1000);
+    assert.equal(result.error, undefined);
+  });
+});
+
 test('getRoundBoard returns board for active round', () => {
   const state = initializeGame({ playerNames: ['A'], boardData: makeBoard() });
   assert.equal(getRoundBoard(state), state.boardData.round1);

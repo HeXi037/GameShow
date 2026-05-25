@@ -12,6 +12,8 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
+const QUICK_MONEY_TURN_SECONDS_MIN = 5;
+const QUICK_MONEY_TURN_SECONDS_MAX = 120;
 const LOCK_HOLD_ON_DISCONNECT_MS = 10000;
 const isDevelopment = process.env.NODE_ENV === 'development';
 const HOST_PASSWORD = process.env.HOST_PASSWORD || (isDevelopment ? 'mogulhost' : null);
@@ -526,7 +528,11 @@ app.post('/host/mogul-multiplier', requireHost, (req, res) => {
 
 app.post('/host/quick-money/start-turn', requireHost, (req, res) => {
   const { seconds } = req.body;
-  const result = startQuickMoneyTurn(gameState, seconds);
+  const parsedSeconds = Number(seconds);
+  if (!Number.isInteger(parsedSeconds) || parsedSeconds < QUICK_MONEY_TURN_SECONDS_MIN || parsedSeconds > QUICK_MONEY_TURN_SECONDS_MAX) {
+    return res.status(400).send(`Seconds must be an integer between ${QUICK_MONEY_TURN_SECONDS_MIN} and ${QUICK_MONEY_TURN_SECONDS_MAX}.`);
+  }
+  const result = startQuickMoneyTurn(gameState, parsedSeconds);
   if (result.error) return res.status(400).send(result.error);
   gameState = result.state;
   io.emit('state:update', publicState());

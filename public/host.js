@@ -313,3 +313,109 @@ async function refreshSessions() {
 const refreshButton = document.getElementById('refreshSessions');
 if (refreshButton) refreshButton.addEventListener('click', refreshSessions);
 refreshSessions();
+
+function createDefaultDefinitionState() {
+  const mkClues = (base) => Array.from({ length: 5 }, (_, i) => ({ value: base * (i + 1), answer: '', question: '' }));
+  const mkRound = (base) => ({ categories: Array.from({ length: 5 }, (_, i) => ({ name: `Category ${i + 1}`, clues: mkClues(base) })) });
+  return { round1: mkRound(100), round2: { mogulMultiplier: { categoryIndex: 0, clueIndex: 0 }, categories: mkRound(200).categories }, quickMoneyPrompts: Array.from({ length: 5 }, () => '') };
+}
+
+let gameDefinitionState = createDefaultDefinitionState();
+
+function renderRoundEditor(containerId, roundKey) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const round = gameDefinitionState[roundKey];
+  container.innerHTML = round.categories.map((cat, cIdx) => `
+    <fieldset>
+      <label>Category ${cIdx + 1} Name</label>
+      <input data-edit="${roundKey}.category.${cIdx}.name" value="${cat.name || ''}" />
+      ${cat.clues.map((clue, rIdx) => `
+        <div>
+          <label>Clue ${rIdx + 1} Value</label><input type="number" data-edit="${roundKey}.clue.${cIdx}.${rIdx}.value" value="${clue.value || ''}" />
+          <label>Answer</label><input data-edit="${roundKey}.clue.${cIdx}.${rIdx}.answer" value="${clue.answer || ''}" />
+          <label>Question</label><input data-edit="${roundKey}.clue.${cIdx}.${rIdx}.question" value="${clue.question || ''}" />
+        </div>`).join('')}
+    </fieldset>
+  `).join('');
+}
+
+function renderQuickMoneyEditor() {
+  const container = document.getElementById('quickMoneyEditor');
+  if (!container) return;
+  container.innerHTML = gameDefinitionState.quickMoneyPrompts.map((prompt, i) => `<label>Prompt ${i + 1}</label><input data-edit="quick.${i}" value="${prompt || ''}" />`).join('');
+}
+
+function renderGameDefinitionEditor() {
+  renderRoundEditor('round1Editor', 'round1');
+  renderRoundEditor('round2Editor', 'round2');
+  renderQuickMoneyEditor();
+}
+
+function bindGameDefinitionEditor() {
+  const form = document.getElementById('gameDefinitionForm');
+  if (!form) return;
+
+  form.addEventListener('input', (event) => {
+    const key = event.target.dataset.edit;
+    if (!key) return;
+    const value = event.target.value;
+    const parts = key.split('.');
+    if (parts[0] === 'quick') {
+      gameDefinitionState.quickMoneyPrompts[Number(parts[1])] = value;
+      return;
+    }
+    const [roundKey, type, a, b, field] = parts;
+    if (type === 'category') gameDefinitionState[roundKey].categories[Number(a)].name = value;
+    if (type === 'clue') gameDefinitionState[roundKey].categories[Number(a)].clues[Number(b)][field] = field === 'value' ? Number(value) : value;
+  });
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const errorEl = document.getElementById('gameDefinitionError');
+    const fd = new FormData(form);
+    gameDefinitionState.round2.mogulMultiplier.categoryIndex = Number(fd.get('mogulCategoryIndex'));
+    gameDefinitionState.round2.mogulMultiplier.clueIndex = Number(fd.get('mogulClueIndex'));
+
+    const categoryCountValid = ['round1', 'round2'].every((roundKey) => gameDefinitionState[roundKey].categories.length === 5 && gameDefinitionState[roundKey].categories.every((c) => c.clues.length === 5));
+    if (!categoryCountValid) {
+      errorEl.textContent = 'Validation error: each round must have 5 categories with 5 clues each.';
+      return;
+    }
+
+    if (gameDefinitionState.quickMoneyPrompts.length !== 5) {
+      errorEl.textContent = 'Validation error: exactly 5 quick money prompts are required.';
+      return;
+    }
+
+    try {
+      await post('/host/game-definitions', { name: fd.get('name'), data: gameDefinitionState });
+      errorEl.textContent = 'Saved successfully.';
+    } catch (error) {
+      errorEl.textContent = error.message;
+    }
+  });
+
+  const loadBtn = document.getElementById('loadDefinitionBtn');
+  if (loadBtn) {
+    loadBtn.addEventListener('click', async () => {
+      const fd = new FormData(form);
+      const name = String(fd.get('name') || '').trim();
+      if (!name) return;
+      const res = await fetch(`/host/game-definitions/${encodeURIComponent(name)}`);
+      const payload = await res.json();
+      if (!res.ok) {
+        document.getElementById('gameDefinitionError').textContent = payload?.error?.message || 'Failed to load definition';
+        return;
+      }
+      gameDefinitionState = payload.data;
+      form.mogulCategoryIndex.value = String(payload.data.round2.mogulMultiplier.categoryIndex);
+      form.mogulClueIndex.value = String(payload.data.round2.mogulMultiplier.clueIndex);
+      renderGameDefinitionEditor();
+    });
+  }
+
+  renderGameDefinitionEditor();
+}
+
+bindGameDefinitionEditor();

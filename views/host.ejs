@@ -30,6 +30,28 @@
         <button type="submit">Start New Game</button>
       </form>
 
+
+      <div class="card">
+        <h3>Game Definition Editor</h3>
+        <form id="gameDefinitionForm">
+          <label>Definition Name</label>
+          <input name="name" placeholder="spring_showdown" required />
+          <div id="gameDefinitionError"></div>
+          <h4>Round 1 (5 categories × 5 clues)</h4>
+          <div id="round1Editor"></div>
+          <h4>Round 2 (5 categories × 5 clues)</h4>
+          <div id="round2Editor"></div>
+          <label>Mogul Multiplier Category Index (0-4)</label>
+          <input name="mogulCategoryIndex" type="number" min="0" max="4" required value="0" />
+          <label>Mogul Multiplier Clue Index (0-4)</label>
+          <input name="mogulClueIndex" type="number" min="0" max="4" required value="0" />
+          <h4>Quick Money Prompts (5)</h4>
+          <div id="quickMoneyEditor"></div>
+          <button type="submit">Save Definition</button>
+          <button type="button" id="loadDefinitionBtn">Load Definition</button>
+        </form>
+      </div>
+
       <div class="card">
         <h3>Session Recovery</h3>
         <button id="refreshSessions" type="button">Refresh Sessions</button>

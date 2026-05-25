@@ -75,8 +75,41 @@ function renderScoreboard(players) {
   document.getElementById('scoreboard').innerHTML = `<table><thead><tr><th>Player</th><th>Score</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
-function post(url, payload) {
-  return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+async function parseHostError(response) {
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    try {
+      const payload = await response.json();
+      if (payload?.error?.message) {
+        return payload.error.message;
+      }
+    } catch (error) {
+      // Fall through to text parsing for backward compatibility.
+    }
+  }
+
+  try {
+    const text = await response.text();
+    return text || `Request failed (${response.status})`;
+  } catch (error) {
+    return `Request failed (${response.status})`;
+  }
+}
+
+async function post(url, payload) {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    const message = await parseHostError(response);
+    showOperationalNotice(message, 'warning');
+    throw new Error(message);
+  }
+
+  return response;
 }
 
 function renderHostBoard() {

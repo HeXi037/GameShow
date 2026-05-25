@@ -1,8 +1,33 @@
 const socket = io({ query: { role: 'viewer' } });
 
+function createSoundboard() {
+  const enabled = () => localStorage.getItem('gameshow:soundEnabled') !== 'false';
+  const sounds = {
+    clueReveal: document.getElementById('sfxClueReveal'),
+    buzzOpen: document.getElementById('sfxBuzzOpen'),
+    buzzLock: document.getElementById('sfxBuzzLock'),
+    quickTimerStart: document.getElementById('sfxQuickTimerStart'),
+    quickTimerExpiry: document.getElementById('sfxQuickTimerExpiry')
+  };
+  return {
+    play(name) {
+      if (!enabled()) return;
+      const audio = sounds[name];
+      if (!audio) return;
+      audio.currentTime = 0;
+      audio.play().catch(() => {});
+    }
+  };
+}
+
+const soundboard = createSoundboard();
+let previousSignal = { revealed: null, buzzOpen: false, buzzLock: null, timerEndsAt: null, turnActive: false };
+let previousScores = new Map();
+
 function renderScoreboard(players) {
-  const rows = players.map((p) => `<tr><td>${p.name}</td><td>${p.score}</td></tr>`).join('');
+  const rows = players.map((p) => { const changed = previousScores.has(p.name) && previousScores.get(p.name) !== p.score; return `<tr class="${changed ? 'score-changed' : ''}"><td>${p.name}</td><td>${p.score}</td></tr>`; }).join('');
   document.getElementById('scoreboard').innerHTML = `<table><thead><tr><th>Player</th><th>Score</th></tr></thead><tbody>${rows}</tbody></table>`;
+  previousScores = new Map(players.map((p) => [p.name, p.score]));
 }
 
 function renderBoard(state) {
@@ -48,6 +73,20 @@ function renderQuickMoneyPhase(state) {
 }
 
 socket.on('state:update', (state) => {
+  const now = Date.now();
+  const revealedId = state.revealedClue ? `${state.round}:${state.revealedClue.answer}` : null;
+  const buzzOpen = Boolean(state.buzz?.open);
+  const buzzLock = state.buzz?.lockedAt || state.buzz?.lockedBy || null;
+  const timerEndsAt = state.quickMoney?.timerEndsAt || null;
+  const turnActive = Boolean(state.quickMoney?.turnActive);
+
+  if (revealedId && revealedId !== previousSignal.revealed) soundboard.play('clueReveal');
+  if (buzzOpen && !previousSignal.buzzOpen) soundboard.play('buzzOpen');
+  if (buzzLock && buzzLock !== previousSignal.buzzLock) soundboard.play('buzzLock');
+  if (turnActive && timerEndsAt && timerEndsAt !== previousSignal.timerEndsAt) soundboard.play('quickTimerStart');
+  if (turnActive && timerEndsAt && timerEndsAt <= now && previousSignal.timerEndsAt && previousSignal.timerEndsAt > now) soundboard.play('quickTimerExpiry');
+
+  previousSignal = { revealed: revealedId, buzzOpen, buzzLock, timerEndsAt, turnActive };
   renderScoreboard(state.players || []);
   renderBoard(state);
   renderQuickMoneyPhase(state);

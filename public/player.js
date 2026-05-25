@@ -2,6 +2,20 @@ let socket = null;
 let currentState = null;
 let playerStatusMessage = '';
 
+function createSoundboard() {
+  const enabled = () => localStorage.getItem('gameshow:soundEnabled') !== 'false';
+  const sounds = {
+    clueReveal: document.getElementById('sfxClueReveal'),
+    buzzOpen: document.getElementById('sfxBuzzOpen'),
+    buzzLock: document.getElementById('sfxBuzzLock'),
+    quickTimerStart: document.getElementById('sfxQuickTimerStart'),
+    quickTimerExpiry: document.getElementById('sfxQuickTimerExpiry')
+  };
+  return { play(name) { if (!enabled()) return; const a=sounds[name]; if (!a) return; a.currentTime=0; a.play().catch(()=>{}); } };
+}
+const soundboard = createSoundboard();
+let previousSignal = { revealed: null, buzzOpen: false, buzzLock: null, timerEndsAt: null, turnActive: false };
+
 const joinCodeInput = document.getElementById('joinCode');
 const roomCodeInput = document.getElementById('roomCode');
 const connectButton = document.getElementById('connectButton');
@@ -24,6 +38,18 @@ function setConnectionStatus(text, online) {
 }
 
 function renderState(state) {
+  const now = Date.now();
+  const revealedId = state.revealedClue ? `${state.round}:${state.revealedClue.answer}` : null;
+  const buzzOpen = Boolean(state.buzz?.open);
+  const buzzLock = state.buzz?.lockedAt || state.buzz?.lockedBy || null;
+  const timerEndsAt = state.quickMoney?.timerEndsAt || null;
+  const turnActive = Boolean(state.quickMoney?.turnActive);
+  if (revealedId && revealedId !== previousSignal.revealed) soundboard.play('clueReveal');
+  if (buzzOpen && !previousSignal.buzzOpen) soundboard.play('buzzOpen');
+  if (buzzLock && buzzLock !== previousSignal.buzzLock) soundboard.play('buzzLock');
+  if (turnActive && timerEndsAt && timerEndsAt !== previousSignal.timerEndsAt) soundboard.play('quickTimerStart');
+  if (turnActive && timerEndsAt && timerEndsAt <= now && previousSignal.timerEndsAt && previousSignal.timerEndsAt > now) soundboard.play('quickTimerExpiry');
+  previousSignal = { revealed: revealedId, buzzOpen, buzzLock, timerEndsAt, turnActive };
   currentState = state;
   const roomCode = (roomCodeInput.value || '').trim().toUpperCase();
   const joinCode = (joinCodeInput.value || '').trim().toUpperCase();

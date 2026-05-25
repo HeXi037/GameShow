@@ -58,6 +58,12 @@
         <div id="sessionList"></div>
       </div>
 
+
+      <div class="card">
+        <h3>Audio</h3>
+        <label><input id="soundEnabledToggle" type="checkbox" checked /> Enable sounds</label>
+      </div>
+
       <div class="card">
         <h3>Current Board Actions</h3>
         <div id="hostBoard"></div>
@@ -115,6 +121,12 @@
     </aside>
   </main>
   <script>window.__INITIAL_STATE__ = <%- JSON.stringify(state) %>;</script>
+
+  <audio id="sfxClueReveal" preload="auto" src="/audio/clue-reveal.mp3"></audio>
+  <audio id="sfxBuzzOpen" preload="auto" src="/audio/buzz-open.mp3"></audio>
+  <audio id="sfxBuzzLock" preload="auto" src="/audio/buzz-lock.mp3"></audio>
+  <audio id="sfxQuickTimerStart" preload="auto" src="/audio/quick-timer-start.mp3"></audio>
+  <audio id="sfxQuickTimerExpiry" preload="auto" src="/audio/quick-timer-expiry.mp3"></audio>
   <script src="/socket.io/socket.io.js"></script>
   <script src="/host.js"></script>
 </body>

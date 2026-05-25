@@ -10,7 +10,11 @@ function initializeGame({ playerNames, boardData, topFinalists = 2 }) {
       reopenOnIncorrect: true,
       maxAttemptsPerClue: 'unlimited',
       buzzTimeoutSeconds: 0,
-      allowRebuzzBySamePlayer: false
+      allowRebuzzBySamePlayer: false,
+      tieBreakerMode: 'scoreFallback',
+      roundMultipliers: { round1: 1, round2: 1 },
+      customRoundValues: { round1: null, round2: null },
+      wrongAnswerPenalty: { mode: 'fixed', value: 100 }
     },
     buzz: null,
     quickMoney: {
@@ -28,6 +32,17 @@ function initializeGame({ playerNames, boardData, topFinalists = 2 }) {
 }
 
 function normalizeConfig(config = {}) {
+  const tieBreakerModes = new Set(['hostPick', 'suddenDeath', 'scoreFallback']);
+  const penaltyModes = new Set(['fixed', 'percent', 'none']);
+  const normalizeRoundValueSet = (raw) => {
+    if (!Array.isArray(raw)) return null;
+    const cleaned = raw.map((value) => Number(value)).filter((value) => Number.isFinite(value) && value > 0);
+    return cleaned.length ? cleaned : null;
+  };
+  const normalizeMultiplier = (value) => {
+    const num = Number(value);
+    return Number.isFinite(num) && num > 0 ? num : 1;
+  };
   const parsedMaxAttempts = config.maxAttemptsPerClue;
   const maxAttemptsPerClue = parsedMaxAttempts === 'unlimited' || parsedMaxAttempts === null || parsedMaxAttempts === undefined
     ? 'unlimited'
@@ -37,8 +52,58 @@ function normalizeConfig(config = {}) {
     reopenOnIncorrect: config.reopenOnIncorrect !== false,
     maxAttemptsPerClue: maxAttemptsPerClue === 'unlimited' ? 'unlimited' : Math.max(1, Math.floor(maxAttemptsPerClue)),
     buzzTimeoutSeconds: Math.max(0, Number(config.buzzTimeoutSeconds) || 0),
-    allowRebuzzBySamePlayer: Boolean(config.allowRebuzzBySamePlayer)
+    allowRebuzzBySamePlayer: Boolean(config.allowRebuzzBySamePlayer),
+    tieBreakerMode: tieBreakerModes.has(config.tieBreakerMode) ? config.tieBreakerMode : 'scoreFallback',
+    roundMultipliers: {
+      round1: normalizeMultiplier(config.roundMultipliers?.round1),
+      round2: normalizeMultiplier(config.roundMultipliers?.round2)
+    },
+    customRoundValues: {
+      round1: normalizeRoundValueSet(config.customRoundValues?.round1),
+      round2: normalizeRoundValueSet(config.customRoundValues?.round2)
+    },
+    wrongAnswerPenalty: {
+      mode: penaltyModes.has(config.wrongAnswerPenalty?.mode) ? config.wrongAnswerPenalty.mode : 'fixed',
+      value: Math.max(0, Number(config.wrongAnswerPenalty?.value) || 0)
+    }
   };
+}
+
+function getTieGuidance(state) {
+  const players = sortPlayers(state.players || []);
+  if (players.length < 2) return { hasTie: false, tiedPlayers: [], mode: state.config?.tieBreakerMode || 'scoreFallback', message: '' };
+  const topScore = players[0].score;
+  const tiedPlayers = players.filter((p) => p.score === topScore).map((p) => p.name);
+  const hasTie = tiedPlayers.length > 1;
+  const mode = state.config?.tieBreakerMode || 'scoreFallback';
+  const map = {
+    hostPick: 'Host should manually pick advancing player(s).',
+    suddenDeath: 'Play one sudden-death clue between tied players.',
+    scoreFallback: 'Use configured score-based fallback to break tie.'
+  };
+  return { hasTie, tiedPlayers, mode, message: hasTie ? map[mode] : '' };
+}
+
+function getClueValue(state) {
+  const roundKey = state.round === 2 ? 'round2' : 'round1';
+  const clueIndex = Number(state.revealedClue?.clueIndex);
+  const custom = state.config?.customRoundValues?.[roundKey];
+  if (Array.isArray(custom) && Number.isFinite(clueIndex) && custom[clueIndex] !== undefined) {
+    return Number(custom[clueIndex]);
+  }
+  const base = Number(state.revealedClue?.value) || 0;
+  return base * Number(state.config?.roundMultipliers?.[roundKey] || 1);
+}
+
+function scoreForResult(player, result, clueValue, penaltyConfig) {
+  if (result === 'correct') return { ...player, score: player.score + clueValue };
+  if (result !== 'incorrect') return player;
+  if (penaltyConfig?.mode === 'none') return player;
+  if (penaltyConfig?.mode === 'percent') {
+    const amount = Math.round((player.score * Number(penaltyConfig.value || 0)) / 100);
+    return { ...player, score: player.score - amount };
+  }
+  return { ...player, score: player.score - clueValue };
 }
 
 function getRoundBoard(state) {
@@ -106,12 +171,11 @@ function scoreClue(state, playerResults = {}) {
   if (!state.revealedClue) return { state, error: 'No active clue.' };
   if (state.revealedClue.isMogulMultiplier) return { state, error: 'Use multiplier scoring for this clue.' };
 
-  const clueValue = Number(state.revealedClue.value);
+  const clueValue = getClueValue(state);
+  const penaltyConfig = state.config?.wrongAnswerPenalty || { mode: 'fixed', value: 0 };
   const players = state.players.map((player) => {
     const result = playerResults[player.name];
-    if (result === 'correct') return { ...player, score: player.score + clueValue };
-    if (result === 'incorrect') return { ...player, score: player.score - clueValue };
-    return player;
+    return scoreForResult(player, result, clueValue, penaltyConfig);
   });
 
   let nextState = { ...state, players: sortPlayers(players), revealedClue: null, buzz: null };
@@ -123,6 +187,8 @@ function scoreClue(state, playerResults = {}) {
       nextState = initializeQuickMoney({ ...nextState, phase: 'quickMoney' });
     }
   }
+
+  nextState = { ...nextState, tieGuidance: getTieGuidance(nextState) };
 
   return { state: nextState };
 }
@@ -143,7 +209,9 @@ function applyMultiplier(state, { playerName, wager, correct }) {
 
   const players = state.players.map((p) => {
     if (p.name !== playerName) return p;
-    return { ...p, score: p.score + (correct === 'true' || correct === true ? amount : -amount) };
+    const multiplier = Number(state.config?.roundMultipliers?.round2 || 1);
+    const adjustedAmount = amount * multiplier;
+    return { ...p, score: p.score + (correct === 'true' || correct === true ? adjustedAmount : -adjustedAmount) };
   });
 
   let nextState = { ...state, players: sortPlayers(players), revealedClue: null, buzz: null };
@@ -151,7 +219,7 @@ function applyMultiplier(state, { playerName, wager, correct }) {
     nextState = initializeQuickMoney({ ...nextState, phase: 'quickMoney' });
   }
 
-  return { state: nextState };
+  return { state: { ...nextState, tieGuidance: getTieGuidance(nextState) } };
 }
 
 function advanceQuickMoney(state, { playerName, promptIndex, answer, points }) {
@@ -281,10 +349,7 @@ function applyScoreAndBuzzRules(state, playerResults = {}) {
 
   const updatedPlayers = state.players.map((player) => {
     const result = playerResults[player.name];
-    const clueValue = Number(state.revealedClue.value);
-    if (result === 'correct') return { ...player, score: player.score + clueValue };
-    if (result === 'incorrect') return { ...player, score: player.score - clueValue };
-    return player;
+    return scoreForResult(player, result, getClueValue(state), state.config?.wrongAnswerPenalty || { mode: 'fixed', value: 0 });
   });
 
   if (!state.config?.reopenOnIncorrect) {
@@ -330,7 +395,8 @@ function startQuickMoneyTurn(state, seconds = 20, now = Date.now()) {
 }
 
 function updateConfig(state, configPatch = {}) {
-  return { ...state, config: normalizeConfig({ ...(state.config || {}), ...configPatch }) };
+  const nextState = { ...state, config: normalizeConfig({ ...(state.config || {}), ...configPatch }) };
+  return { ...nextState, tieGuidance: getTieGuidance(nextState) };
 }
 
 module.exports = { initializeGame, selectClue, scoreClue, applyMultiplier, advanceQuickMoney, initializeQuickMoney, allCluesUsed, openBuzz, resetBuzz, lockBuzz, applyScoreAndBuzzRules, updateConfig, normalizeConfig, getRoundBoard, startQuickMoneyTurn };

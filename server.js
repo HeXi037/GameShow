@@ -86,13 +86,13 @@ function normalizeClientRole(rawRole) {
   return rawRole === 'host' || rawRole === 'viewer' || rawRole === 'player' ? rawRole : null;
 }
 
-function presenceState() {
+function computePresenceState(clients) {
   let hostCount = 0;
   let viewerCount = 0;
   let playerCount = 0;
   const playersConnected = [];
 
-  connectedClients.forEach((client) => {
+  clients.forEach((client) => {
     if (client.role === 'host') hostCount += 1;
     if (client.role === 'viewer') viewerCount += 1;
     if (client.role === 'player') {
@@ -102,13 +102,26 @@ function presenceState() {
   });
 
   return {
-    totalConnections: connectedClients.size,
+    totalConnections: clients.size,
     hostConnections: hostCount,
     viewerConnections: viewerCount,
     playerConnections: playerCount,
     playerNames: [...new Set(playersConnected)],
     hostConnected: hostCount > 0
   };
+}
+
+function presenceState() {
+  return computePresenceState(connectedClients);
+}
+
+function resolvePlayerJoin({ joinCode, socketId, joinIdentityState }) {
+  const mappedPlayerName = joinIdentityState.playerByCode.get(joinCode);
+  if (!mappedPlayerName) {
+    return { rejectedReason: 'invalid-join-code', playerName: null, identityBound: false, existingSocketId: null };
+  }
+  const existingSocketId = joinIdentityState.activeSocketByPlayer.get(mappedPlayerName) || null;
+  return { rejectedReason: null, playerName: mappedPlayerName, identityBound: true, existingSocketId: existingSocketId && existingSocketId !== socketId ? existingSocketId : null };
 }
 
 function loadGameData(filePath) {
@@ -548,21 +561,20 @@ io.on('connection', (socket) => {
   let rejectedReason = null;
 
   if (role === 'player') {
-    const mappedPlayerName = joinIdentity.playerByCode.get(joinCode);
-    if (!mappedPlayerName) {
-      rejectedReason = 'invalid-join-code';
-    } else {
-      const existingSocketId = joinIdentity.activeSocketByPlayer.get(mappedPlayerName);
-      if (existingSocketId && existingSocketId !== socket.id) {
-        const existingSocket = io.sockets.sockets.get(existingSocketId);
+    const resolution = resolvePlayerJoin({ joinCode, socketId: socket.id, joinIdentityState: joinIdentity });
+    rejectedReason = resolution.rejectedReason;
+    playerName = resolution.playerName;
+    identityBound = resolution.identityBound;
+
+    if (!rejectedReason) {
+      if (resolution.existingSocketId) {
+        const existingSocket = io.sockets.sockets.get(resolution.existingSocketId);
         if (existingSocket) {
-          existingSocket.emit('session:taken-over', { playerName: mappedPlayerName });
+          existingSocket.emit('session:taken-over', { playerName });
           existingSocket.disconnect(true);
         }
       }
-      playerName = mappedPlayerName;
-      joinIdentity.activeSocketByPlayer.set(mappedPlayerName, socket.id);
-      identityBound = true;
+      joinIdentity.activeSocketByPlayer.set(playerName, socket.id);
     }
   } else {
     playerName = String(socket.handshake.query?.playerName || '').trim() || null;
@@ -670,5 +682,7 @@ module.exports = {
     buzzTimeoutInterval,
     LOCK_HOLD_ON_DISCONNECT_MS
   },
-  attemptBuzz
+  attemptBuzz,
+  computePresenceState,
+  resolvePlayerJoin
 };

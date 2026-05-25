@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 process.env.NODE_ENV = 'development';
 const { initializeGame, selectClue, openBuzz, resetBuzz, applyScoreAndBuzzRules, updateConfig } = require('../src/gameState');
-const { attemptBuzz } = require('../server');
+const { attemptBuzz, computePresenceState, resolvePlayerJoin } = require('../server');
 
 function makeBoard() {
   const makeRound = (values) => ({
@@ -55,6 +55,17 @@ test('first buzz wins; subsequent buzzes rejected while locked', () => {
   assert.equal(secondSocket.emitted[0].payload.reason, 'buzz-closed');
 });
 
+test('buzz rejects identity mismatch when attempted name differs from bound player', () => {
+  let state = mkState();
+  const io = mkIo();
+  const socket = mkSocket();
+
+  attemptBuzz({ socket, client: { role: 'player', playerName: 'A' }, attemptedName: 'B', ioRef: io, getState: () => state, setState: (next) => { state = next; }, clearLockTimer: () => {} });
+  assert.equal(socket.emitted[0].event, 'buzz:rejected');
+  assert.equal(socket.emitted[0].payload.reason, 'identity-mismatch');
+  assert.equal(state.buzz.lockedBy, null);
+});
+
 test('reset/open behavior and reopen-after-incorrect behavior', () => {
   let state = mkState();
   const io = mkIo();
@@ -72,6 +83,52 @@ test('reset/open behavior and reopen-after-incorrect behavior', () => {
   state = applyScoreAndBuzzRules(state, { B: 'incorrect' }).state;
   assert.equal(state.buzz.open, true);
   assert.equal(state.buzz.lockedBy, null);
+});
+
+test('resolvePlayerJoin rejects invalid join codes', () => {
+  const joinIdentity = {
+    playerByCode: new Map([['ABC12345', 'A']]),
+    activeSocketByPlayer: new Map()
+  };
+  const resolution = resolvePlayerJoin({ joinCode: 'NOPE9999', socketId: 'socket-new', joinIdentityState: joinIdentity });
+  assert.equal(resolution.rejectedReason, 'invalid-join-code');
+  assert.equal(resolution.identityBound, false);
+});
+
+test('resolvePlayerJoin returns takeover socket for duplicate code connection', () => {
+  const joinIdentity = {
+    playerByCode: new Map([['ABC12345', 'A']]),
+    activeSocketByPlayer: new Map([['A', 'socket-old']])
+  };
+  const resolution = resolvePlayerJoin({ joinCode: 'ABC12345', socketId: 'socket-new', joinIdentityState: joinIdentity });
+  assert.equal(resolution.rejectedReason, null);
+  assert.equal(resolution.playerName, 'A');
+  assert.equal(resolution.existingSocketId, 'socket-old');
+  assert.equal(resolution.identityBound, true);
+});
+
+test('presenceState counters track host/viewer/player connect-disconnect', () => {
+  const connected = new Map();
+  connected.set('h1', { role: 'host', playerName: null });
+  connected.set('v1', { role: 'viewer', playerName: null });
+  connected.set('p1', { role: 'player', playerName: 'A' });
+  connected.set('p2', { role: 'player', playerName: 'B' });
+
+  let presence = computePresenceState(connected);
+  assert.equal(presence.totalConnections, 4);
+  assert.equal(presence.hostConnections, 1);
+  assert.equal(presence.viewerConnections, 1);
+  assert.equal(presence.playerConnections, 2);
+  assert.deepEqual(presence.playerNames.sort(), ['A', 'B']);
+  assert.equal(presence.hostConnected, true);
+
+  connected.delete('v1');
+  connected.delete('p2');
+  presence = computePresenceState(connected);
+  assert.equal(presence.totalConnections, 2);
+  assert.equal(presence.viewerConnections, 0);
+  assert.equal(presence.playerConnections, 1);
+  assert.deepEqual(presence.playerNames, ['A']);
 });
 
 test('disconnect/reconnect edge semantics around active buzz windows via state rules', () => {

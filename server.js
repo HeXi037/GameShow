@@ -341,6 +341,42 @@ function scheduleWinnerLockRelease(playerName) {
   }, LOCK_HOLD_ON_DISCONNECT_MS);
 }
 
+function attemptBuzz({ socket, client, attemptedName, ioRef, getState, setState, clearLockTimer }) {
+  const state = getState();
+  if (!client || client.role !== 'player' || !client.playerName) {
+    socket.emit('buzz:rejected', { reason: 'unauthenticated' });
+    return;
+  }
+  const resolvedName = String(attemptedName || client.playerName || '').trim();
+  if (!resolvedName || resolvedName !== client.playerName) {
+    socket.emit('buzz:rejected', { reason: 'identity-mismatch' });
+    return;
+  }
+  if (!state.players.some((player) => player.name === resolvedName)) {
+    socket.emit('buzz:rejected', { reason: 'unrecognized-contestant' });
+    return;
+  }
+  if (!state.buzz?.open) {
+    socket.emit('buzz:rejected', { reason: state.buzz?.timeoutAt && Date.now() > state.buzz.timeoutAt ? 'buzz-timeout' : 'buzz-closed' });
+    return;
+  }
+  if (state.buzz.lockedBy) {
+    socket.emit('buzz:rejected', { reason: 'already-locked', lockedBy: state.buzz.lockedBy });
+    return;
+  }
+  const attemptedAt = Date.now();
+  const result = lockBuzz(state, resolvedName, attemptedAt);
+  if (result.error || !result.state?.buzz?.lockedBy) {
+    socket.emit('buzz:rejected', { reason: result.error || 'lock-failed' });
+    return;
+  }
+  setState(result.state);
+  clearLockTimer();
+  ioRef.emit('buzz:locked', { playerName: result.state.buzz.lockedBy, lockedAt: result.state.buzz.lockedAt });
+  socket.broadcast.emit('buzz:rejected', { reason: 'already-locked', lockedBy: result.state.buzz.lockedBy });
+  ioRef.emit('state:update', publicState());
+}
+
 
 const loginAttempts = new Map();
 const LOGIN_WINDOW_MS = 10 * 60 * 1000;
@@ -573,54 +609,15 @@ io.on('connection', (socket) => {
   io.emit('state:update', publicState());
   socket.emit('state:update', publicState());
 
-  const handleBuzzAttempt = ({ playerName } = {}) => {
-    const client = connectedClients.get(socket.id);
-    if (!client || client.role !== 'player' || !client.playerName) {
-      socket.emit('buzz:rejected', { reason: 'unauthenticated' });
-      return;
-    }
-
-    const resolvedName = String(playerName || client.playerName || '').trim();
-    if (!resolvedName || resolvedName !== client.playerName) {
-      socket.emit('buzz:rejected', { reason: 'identity-mismatch' });
-      return;
-    }
-
-    if (!gameState.players.some((player) => player.name === resolvedName)) {
-      socket.emit('buzz:rejected', { reason: 'unrecognized-contestant' });
-      return;
-    }
-
-    if (!gameState.buzz?.open) {
-      socket.emit('buzz:rejected', { reason: gameState.buzz?.timeoutAt && Date.now() > gameState.buzz.timeoutAt ? 'buzz-timeout' : 'buzz-closed' });
-      return;
-    }
-
-    if (gameState.buzz.lockedBy) {
-      socket.emit('buzz:rejected', { reason: 'already-locked', lockedBy: gameState.buzz.lockedBy });
-      return;
-    }
-
-    const attemptedAt = Date.now();
-    const result = lockBuzz(gameState, resolvedName, attemptedAt);
-
-    if (result.error || !result.state?.buzz?.lockedBy) {
-      socket.emit('buzz:rejected', { reason: result.error || 'lock-failed' });
-      return;
-    }
-
-    gameState = result.state;
-    clearLockReleaseTimer();
-    io.emit('buzz:locked', {
-      playerName: gameState.buzz.lockedBy,
-      lockedAt: gameState.buzz.lockedAt
-    });
-    socket.broadcast.emit('buzz:rejected', {
-      reason: 'already-locked',
-      lockedBy: gameState.buzz.lockedBy
-    });
-    io.emit('state:update', publicState());
-  };
+  const handleBuzzAttempt = ({ playerName } = {}) => attemptBuzz({
+    socket,
+    client: connectedClients.get(socket.id),
+    attemptedName: playerName,
+    ioRef: io,
+    getState: () => gameState,
+    setState: (next) => { gameState = next; },
+    clearLockTimer: clearLockReleaseTimer
+  });
 
   socket.on('buzz:attempt', handleBuzzAttempt);
   socket.on('player:buzz', handleBuzzAttempt);
@@ -668,7 +665,7 @@ io.on('connection', (socket) => {
 });
 
 
-setInterval(() => {
+const buzzTimeoutInterval = setInterval(() => {
   if (!gameState.revealedClue || !gameState.buzz?.open || gameState.buzz?.lockedBy) return;
   const timeoutAt = gameState.buzz.timeoutAt;
   if (!timeoutAt || Date.now() < timeoutAt) return;
@@ -678,7 +675,30 @@ setInterval(() => {
   io.emit('state:update', publicState());
   emitHostNotice('Buzz timed out with no attempts; buzz closed automatically.', 'info');
 }, 250);
+buzzTimeoutInterval.unref();
 
-server.listen(PORT, () => {
-  console.log(`Mogul Money clone running on http://localhost:${PORT}`);
-});
+if (require.main === module) {
+  server.listen(PORT, () => {
+    console.log(`Mogul Money clone running on http://localhost:${PORT}`);
+  });
+}
+
+module.exports = {
+  app,
+  server,
+  io,
+  __testHooks: {
+    emptyState,
+    publicState,
+    resetJoinIdentity,
+    setGameState: (state) => {
+      gameState = state;
+    },
+    getGameState: () => gameState,
+    clearLockReleaseTimer,
+    getJoinCodeForPlayer: (name) => joinIdentity.codesByPlayer.get(name),
+    buzzTimeoutInterval,
+    LOCK_HOLD_ON_DISCONNECT_MS
+  },
+  attemptBuzz
+};

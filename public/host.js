@@ -2,6 +2,30 @@ const stateRoom = (window.__INITIAL_STATE__ && window.__INITIAL_STATE__.roomCode
 const socket = io({ query: { role: 'host', roomCode: stateRoom } });
 let state = window.__INITIAL_STATE__ || {};
 
+function createSoundboard() {
+  const sounds = {
+    clueReveal: document.getElementById('sfxClueReveal'),
+    buzzOpen: document.getElementById('sfxBuzzOpen'),
+    buzzLock: document.getElementById('sfxBuzzLock'),
+    quickTimerStart: document.getElementById('sfxQuickTimerStart'),
+    quickTimerExpiry: document.getElementById('sfxQuickTimerExpiry')
+  };
+  const enabled = () => localStorage.getItem('gameshow:soundEnabled') !== 'false';
+  return {
+    play(name) {
+      if (!enabled()) return;
+      const a = sounds[name];
+      if (!a) return;
+      a.currentTime = 0;
+      a.play().catch(() => {});
+    },
+    setEnabled(value) { localStorage.setItem('gameshow:soundEnabled', value ? 'true' : 'false'); }
+  };
+}
+const soundboard = createSoundboard();
+let previousSignal = { revealed: null, buzzOpen: false, buzzLock: null, timerEndsAt: null, turnActive: false };
+let previousScores = new Map();
+
 function setConnectionStatus(text, online) {
   const el = document.getElementById('hostConnectionStatus');
   if (!el) return;
@@ -72,8 +96,9 @@ function showOperationalNotice(message, level = 'info') {
 }
 
 function renderScoreboard(players) {
-  const rows = players.map((p) => `<tr><td>${p.name}</td><td>${p.score}</td></tr>`).join('');
+  const rows = players.map((p) => { const changed = previousScores.has(p.name) && previousScores.get(p.name) !== p.score; return `<tr class="${changed ? 'score-changed' : ''}"><td>${p.name}</td><td>${p.score}</td></tr>`; }).join('');
   document.getElementById('scoreboard').innerHTML = `<table><thead><tr><th>Player</th><th>Score</th></tr></thead><tbody>${rows}</tbody></table>`;
+  previousScores = new Map(players.map((p) => [p.name, p.score]));
 }
 
 async function parseHostError(response) {
@@ -145,7 +170,8 @@ function renderReveal() {
   const buzzState = buzz.lockedBy ? 'Locked' : (buzz.open ? 'Open' : 'Closed');
   const buzzStatus = buzz.lockedBy ? `Locked by ${buzz.lockedBy}` : buzzState;
   const lockTime = buzz.lockedAt ? new Date(buzz.lockedAt).toLocaleTimeString() : '—';
-  const winnerPanel = `<p><b>Buzz Status:</b> ${buzzState}</p><p><b>Winner:</b> ${buzz.lockedBy || 'None'}</p><p><b>Lock Time:</b> ${lockTime}</p>`;
+  const winnerClass = buzz.lockedBy ? 'buzz-winner' : '';
+  const winnerPanel = `<p><b>Buzz Status:</b> ${buzzState}</p><p class="${winnerClass}"><b>Winner:</b> ${buzz.lockedBy || 'None'}</p><p><b>Lock Time:</b> ${lockTime}</p>`;
   const indicator = isMultiplier ? '<p><strong>⚡ Mogul Multiplier clue is active.</strong></p>' : '';
   const config = state.config || {};
   const ruleSummary = `<p><b>Rules:</b> reopenOnIncorrect=${Boolean(config.reopenOnIncorrect)}, maxAttemptsPerClue=${config.maxAttemptsPerClue ?? 'unlimited'}, buzzTimeoutSeconds=${Number(config.buzzTimeoutSeconds || 0)}, allowRebuzzBySamePlayer=${Boolean(config.allowRebuzzBySamePlayer)}</p>`;
@@ -243,6 +269,18 @@ document.getElementById('quickSubmit').addEventListener('submit', async (e) => {
 });
 
 socket.on('state:update', (next) => {
+  const now = Date.now();
+  const revealedId = next.revealedClue ? `${next.round}:${next.revealedClue.answer}` : null;
+  const buzzOpen = Boolean(next.buzz?.open);
+  const buzzLock = next.buzz?.lockedAt || next.buzz?.lockedBy || null;
+  const timerEndsAt = next.quickMoney?.timerEndsAt || null;
+  const turnActive = Boolean(next.quickMoney?.turnActive);
+  if (revealedId && revealedId !== previousSignal.revealed) soundboard.play('clueReveal');
+  if (buzzOpen && !previousSignal.buzzOpen) soundboard.play('buzzOpen');
+  if (buzzLock && buzzLock !== previousSignal.buzzLock) soundboard.play('buzzLock');
+  if (turnActive && timerEndsAt && timerEndsAt !== previousSignal.timerEndsAt) soundboard.play('quickTimerStart');
+  if (turnActive && timerEndsAt && timerEndsAt <= now && previousSignal.timerEndsAt && previousSignal.timerEndsAt > now) soundboard.play('quickTimerExpiry');
+  previousSignal = { revealed: revealedId, buzzOpen, buzzLock, timerEndsAt, turnActive };
   state = next;
   renderScoreboard(state.players || []);
   renderHostBoard();
@@ -419,3 +457,10 @@ function bindGameDefinitionEditor() {
 }
 
 bindGameDefinitionEditor();
+
+const soundToggle = document.getElementById('soundEnabledToggle');
+if (soundToggle) {
+  const current = localStorage.getItem('gameshow:soundEnabled') !== 'false';
+  soundToggle.checked = current;
+  soundToggle.addEventListener('change', () => soundboard.setEnabled(soundToggle.checked));
+}

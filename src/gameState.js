@@ -49,6 +49,9 @@ function sortPlayers(players) {
   return [...players].sort((a, b) => b.score - a.score);
 }
 
+const QUICK_MONEY_POINTS_MIN = 0;
+const QUICK_MONEY_POINTS_MAX = 1000;
+
 function allCluesUsed(state, round = state.round) {
   const board = round === 1 ? state.boardData.round1 : state.boardData.round2;
   return board.categories.every((cat) => cat.clues.every((clue) => clue.used));
@@ -162,6 +165,20 @@ function advanceQuickMoney(state, { playerName, promptIndex, answer, points }) {
   if (playerName !== activeFinalist) return { state, error: 'Submission is not for the active finalist.' };
   if (parsedPromptIndex !== state.quickMoney.promptIndex) return { state, error: 'Submission is not for the active prompt.' };
 
+  const normalizedAnswer = typeof answer === 'string' ? answer.trim() : '';
+  if (!normalizedAnswer) return { state, error: 'Answer must be a non-empty string.' };
+
+  const parsedPoints = Number(points);
+  if (!Number.isFinite(parsedPoints)) {
+    return { state, error: 'Points must be a finite number.' };
+  }
+  if (parsedPoints < QUICK_MONEY_POINTS_MIN || parsedPoints > QUICK_MONEY_POINTS_MAX) {
+    return {
+      state,
+      error: `Points must be between ${QUICK_MONEY_POINTS_MIN} and ${QUICK_MONEY_POINTS_MAX}.`
+    };
+  }
+
   const answersForPlayer = state.quickMoney.answers[playerName] || [];
   if (answersForPlayer.some((entry) => entry.promptIndex === parsedPromptIndex)) {
     return { state, error: 'Duplicate submission for this finalist prompt.' };
@@ -169,11 +186,11 @@ function advanceQuickMoney(state, { playerName, promptIndex, answer, points }) {
 
   const nextAnswers = {
     ...state.quickMoney.answers,
-    [playerName]: [...answersForPlayer, { promptIndex: parsedPromptIndex, answer, points: Number(points) }]
+    [playerName]: [...answersForPlayer, { promptIndex: parsedPromptIndex, answer: normalizedAnswer, points: parsedPoints }]
   };
 
   const updatedPlayers = sortPlayers(state.players.map((p) =>
-    p.name === playerName ? { ...p, score: p.score + Number(points) } : p
+    p.name === playerName ? { ...p, score: p.score + parsedPoints } : p
   ));
 
   const isLastPrompt = state.quickMoney.promptIndex >= 4;

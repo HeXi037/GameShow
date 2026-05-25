@@ -3,6 +3,7 @@ let currentState = null;
 let playerStatusMessage = '';
 
 const joinCodeInput = document.getElementById('joinCode');
+const roomCodeInput = document.getElementById('roomCode');
 const connectButton = document.getElementById('connectButton');
 const playerConnectionStatus = document.getElementById('playerConnectionStatus');
 const selectedPlayer = document.getElementById('selectedPlayer');
@@ -12,7 +13,8 @@ const buzzButton = document.getElementById('buzzButton');
 const buzzInfo = document.getElementById('buzzInfo');
 
 async function fetchState() {
-  const response = await fetch('/state');
+  const roomCode = (roomCodeInput.value || '').trim().toUpperCase();
+  const response = await fetch(`/state?room=${encodeURIComponent(roomCode)}`);
   return response.json();
 }
 
@@ -23,6 +25,7 @@ function setConnectionStatus(text, online) {
 
 function renderState(state) {
   currentState = state;
+  const roomCode = (roomCodeInput.value || '').trim().toUpperCase();
   const joinCode = (joinCodeInput.value || '').trim().toUpperCase();
   if (joinCode && state.joinCodes) {
     const matchedEntry = Object.entries(state.joinCodes).find(([, value]) => value.code === joinCode);
@@ -51,14 +54,15 @@ function renderState(state) {
 }
 
 function connectAsPlayer() {
+  const roomCode = (roomCodeInput.value || '').trim().toUpperCase();
   const joinCode = (joinCodeInput.value || '').trim().toUpperCase();
-  if (!joinCode) return;
+  if (!joinCode || !roomCode) return;
 
   if (socket) {
     socket.disconnect();
   }
 
-  socket = io({ query: { role: 'player', joinCode } });
+  socket = io({ query: { role: 'player', roomCode, joinCode } });
   selectedPlayer.textContent = 'Authenticating...';
 
   socket.on('connect', () => setConnectionStatus('Connected', true));
@@ -92,7 +96,10 @@ buzzButton.addEventListener('click', () => {
   socket.emit('player:buzz', { at: Date.now() });
 });
 
-const initialCode = new URLSearchParams(window.location.search).get('code');
+const params = new URLSearchParams(window.location.search);
+const initialCode = params.get('code');
+const initialRoom = params.get('room');
+if (initialRoom) roomCodeInput.value = initialRoom.toUpperCase();
 if (initialCode) {
   joinCodeInput.value = initialCode.toUpperCase();
 }

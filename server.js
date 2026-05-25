@@ -24,6 +24,22 @@ if (!HOST_PASSWORD) {
 }
 const upload = multer({ dest: path.join(__dirname, 'uploads') });
 
+
+const HOST_ERROR_CODES = Object.freeze({
+  clueNotFound: 'CLUE_NOT_FOUND',
+  buzzNotLocked: 'BUZZ_NOT_LOCKED',
+  invalidWager: 'INVALID_WAGER',
+  invalidGameData: 'INVALID_GAME_DATA',
+  invalidRequest: 'INVALID_REQUEST',
+  quickMoneyInactive: 'QUICK_MONEY_INACTIVE',
+  quickMoneyComplete: 'QUICK_MONEY_COMPLETE',
+  multiplierInactive: 'MULTIPLIER_INACTIVE'
+});
+
+function sendHostError(res, status, code, message) {
+  return res.status(status).json({ error: { code, message } });
+}
+
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use(express.urlencoded({ extended: true }));
@@ -456,7 +472,7 @@ app.post('/host/setup', requireHost, upload.single('boardFile'), (req, res) => {
     io.emit('state:update', publicState());
     res.redirect('/host');
   } catch (error) {
-    res.status(400).send(error.message);
+    sendHostError(res, 400, HOST_ERROR_CODES.invalidGameData, error.message);
   } finally {
     if (uploadedFilePath) {
       fs.unlink(uploadedFilePath, (unlinkErr) => {
@@ -473,8 +489,8 @@ app.post('/host/select-clue', requireHost, (req, res) => {
   const parsedCategoryIndex = Number(categoryIndex);
   const parsedClueIndex = Number(clueIndex);
   const result = selectClue(gameState, parsedCategoryIndex, parsedClueIndex);
-  if (result.error === 'Clue not found.') return res.status(404).send(result.error);
-  if (result.error) return res.status(400).send(result.error);
+  if (result.error === 'Clue not found.') return sendHostError(res, 404, HOST_ERROR_CODES.clueNotFound, result.error);
+  if (result.error) return sendHostError(res, 400, HOST_ERROR_CODES.invalidRequest, result.error);
   gameState = result.state;
   io.emit('state:update', publicState());
   res.sendStatus(200);
@@ -482,7 +498,7 @@ app.post('/host/select-clue', requireHost, (req, res) => {
 
 app.post('/host/open-buzz', requireHost, (req, res) => {
   const result = openBuzz(gameState);
-  if (result.error) return res.status(400).send(result.error);
+  if (result.error) return sendHostError(res, 400, HOST_ERROR_CODES.invalidRequest, result.error);
   gameState = result.state;
   io.emit('state:update', publicState());
   res.sendStatus(200);
@@ -490,7 +506,7 @@ app.post('/host/open-buzz', requireHost, (req, res) => {
 
 app.post('/host/reset-buzz', requireHost, (req, res) => {
   const result = resetBuzz(gameState);
-  if (result.error) return res.status(400).send(result.error);
+  if (result.error) return sendHostError(res, 400, HOST_ERROR_CODES.invalidRequest, result.error);
   gameState = result.state;
   io.emit('state:update', publicState());
   res.sendStatus(200);
@@ -499,10 +515,10 @@ app.post('/host/reset-buzz', requireHost, (req, res) => {
 app.post('/host/score-clue', requireHost, (req, res) => {
   const { playerResults } = req.body;
   if (gameState.revealedClue && !gameState.revealedClue.isMogulMultiplier && !gameState.buzz?.lockedBy) {
-    return res.status(400).send('Select a buzz winner before scoring this clue.');
+    return sendHostError(res, 400, HOST_ERROR_CODES.buzzNotLocked, 'Select a buzz winner before scoring this clue.');
   }
   const result = applyScoreAndBuzzRules(gameState, playerResults || {});
-  if (result.error) return res.status(400).send(result.error);
+  if (result.error) return sendHostError(res, 400, HOST_ERROR_CODES.invalidRequest, result.error);
   gameState = result.state;
   io.emit('state:update', publicState());
   res.sendStatus(200);
@@ -519,11 +535,14 @@ app.post('/host/mogul-multiplier', requireHost, (req, res) => {
   const { playerName, wager, correct } = req.body;
 
   if (!gameState.revealedClue || !gameState.revealedClue.isMogulMultiplier) {
-    return res.status(400).send('Mogul Multiplier is not active.');
+    return sendHostError(res, 400, HOST_ERROR_CODES.multiplierInactive, 'Mogul Multiplier is not active.');
   }
 
   const result = applyMultiplier(gameState, { playerName, wager, correct });
-  if (result.error) return res.status(400).send(result.error);
+  if (result.error) {
+    const code = result.error.includes('Wager') ? HOST_ERROR_CODES.invalidWager : HOST_ERROR_CODES.invalidRequest;
+    return sendHostError(res, 400, code, result.error);
+  }
   gameState = result.state;
   io.emit('state:update', publicState());
   res.sendStatus(200);
@@ -533,21 +552,21 @@ app.post('/host/quick-money/start-turn', requireHost, (req, res) => {
   const { seconds } = req.body;
   const parsedSeconds = Number(seconds);
   if (!Number.isInteger(parsedSeconds) || parsedSeconds < QUICK_MONEY_TURN_SECONDS_MIN || parsedSeconds > QUICK_MONEY_TURN_SECONDS_MAX) {
-    return res.status(400).send(`Seconds must be an integer between ${QUICK_MONEY_TURN_SECONDS_MIN} and ${QUICK_MONEY_TURN_SECONDS_MAX}.`);
+    return sendHostError(res, 400, HOST_ERROR_CODES.invalidRequest, `Seconds must be an integer between ${QUICK_MONEY_TURN_SECONDS_MIN} and ${QUICK_MONEY_TURN_SECONDS_MAX}.`);
   }
   const result = startQuickMoneyTurn(gameState, parsedSeconds);
-  if (result.error) return res.status(400).send(result.error);
+  if (result.error) return sendHostError(res, 400, HOST_ERROR_CODES.invalidRequest, result.error);
   gameState = result.state;
   io.emit('state:update', publicState());
   res.sendStatus(200);
 });
 
 app.post('/host/quick-money/submit', requireHost, (req, res) => {
-  if (gameState.phase !== 'quickMoney') return res.status(400).send('Quick Money is not active.');
-  if (gameState.quickMoney.completed) return res.status(400).send('Quick Money is already complete.');
+  if (gameState.phase !== 'quickMoney') return sendHostError(res, 400, HOST_ERROR_CODES.quickMoneyInactive, 'Quick Money is not active.');
+  if (gameState.quickMoney.completed) return sendHostError(res, 400, HOST_ERROR_CODES.quickMoneyComplete, 'Quick Money is already complete.');
 
   const result = advanceQuickMoney(gameState, req.body);
-  if (result.error) return res.status(400).send(result.error);
+  if (result.error) return sendHostError(res, 400, HOST_ERROR_CODES.invalidRequest, result.error);
   gameState = result.state;
   io.emit('state:update', publicState());
   res.sendStatus(200);

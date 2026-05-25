@@ -287,3 +287,29 @@ renderRules();
 setConnectionStatus(socket.connected ? 'Connected' : 'Connecting...', socket.connected);
 
 setInterval(renderQuickMoneyCountdown, 250);
+
+async function refreshSessions() {
+  const res = await fetch('/host/sessions');
+  if (!res.ok) return;
+  const payload = await res.json();
+  const wrap = document.getElementById('sessionList');
+  if (!wrap) return;
+  const sessions = payload.sessions || [];
+  if (!sessions.length) {
+    wrap.innerHTML = '<p>No saved sessions.</p>';
+    return;
+  }
+  wrap.innerHTML = sessions.map((s) => `<div><code>${s.roomCode}</code> (${s.archived ? 'archived' : 'active'}) <button data-resume="${s.roomCode}">Resume</button> <button data-archive="${s.roomCode}">Archive</button></div>`).join('');
+  wrap.querySelectorAll('button[data-resume]').forEach((btn) => btn.addEventListener('click', async () => {
+    await post('/host/resume', { roomCode: btn.dataset.resume });
+    window.location.reload();
+  }));
+  wrap.querySelectorAll('button[data-archive]').forEach((btn) => btn.addEventListener('click', async () => {
+    await post('/host/archive', { roomCode: btn.dataset.archive });
+    await refreshSessions();
+  }));
+}
+
+const refreshButton = document.getElementById('refreshSessions');
+if (refreshButton) refreshButton.addEventListener('click', refreshSessions);
+refreshSessions();

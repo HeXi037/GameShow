@@ -43,6 +43,48 @@ const persistRoom = (room) => saveSession(room.roomCode, room.gameState);
 
 function loadGameData(filePath) { return JSON.parse(fs.readFileSync(filePath, 'utf-8')); }
 function initializeBoardState(data) { ['round1', 'round2'].forEach((roundKey) => data[roundKey].categories.forEach((category) => category.clues.forEach((clue) => { clue.used = false; }))); }
+function safeGameDefinitionName(name) {
+  const trimmed = String(name || '').trim();
+  if (!trimmed) throw new Error('Game definition name is required.');
+  if (!/^[a-zA-Z0-9_-]+$/.test(trimmed)) throw new Error('Game definition name may only include letters, numbers, underscores, and hyphens.');
+  return trimmed;
+}
+function resolveDataFileByName(name) {
+  const safeName = safeGameDefinitionName(name);
+  return path.join(__dirname, 'data', `${safeName}.json`);
+}
+function validateGameData(data) {
+  const ensureRound = (roundName) => {
+    const round = data?.[roundName];
+    if (!round || !Array.isArray(round.categories) || round.categories.length !== 5) throw new Error(`${roundName} must include exactly 5 categories.`);
+    round.categories.forEach((category, categoryIndex) => {
+      if (!category || typeof category.name !== 'string' || !category.name.trim()) throw new Error(`${roundName}.categories[${categoryIndex}].name is required.`);
+      if (!Array.isArray(category.clues) || category.clues.length !== 5) throw new Error(`${roundName}.categories[${categoryIndex}] must include exactly 5 clues.`);
+      category.clues.forEach((clue, clueIndex) => {
+        if (!Number.isFinite(Number(clue?.value))) throw new Error(`${roundName}.categories[${categoryIndex}].clues[${clueIndex}].value must be numeric.`);
+        if (typeof clue?.answer !== 'string' || !clue.answer.trim()) throw new Error(`${roundName}.categories[${categoryIndex}].clues[${clueIndex}].answer is required.`);
+        if (typeof clue?.question !== 'string' || !clue.question.trim()) throw new Error(`${roundName}.categories[${categoryIndex}].clues[${clueIndex}].question is required.`);
+      });
+    });
+  };
+
+  ensureRound('round1');
+  ensureRound('round2');
+
+  const mm = data?.round2?.mogulMultiplier;
+  if (!mm || !Number.isInteger(Number(mm.categoryIndex)) || !Number.isInteger(Number(mm.clueIndex))) {
+    throw new Error('round2.mogulMultiplier must include integer categoryIndex and clueIndex.');
+  }
+  const catIndex = Number(mm.categoryIndex);
+  const clueIndex = Number(mm.clueIndex);
+  if (catIndex < 0 || catIndex > 4 || clueIndex < 0 || clueIndex > 4) throw new Error('round2.mogulMultiplier coordinates must be between 0 and 4.');
+
+  if (!Array.isArray(data?.quickMoneyPrompts) || data.quickMoneyPrompts.length !== 5) throw new Error('quickMoneyPrompts must include exactly 5 prompts.');
+  data.quickMoneyPrompts.forEach((prompt, i) => {
+    if (typeof prompt !== 'string' || !prompt.trim()) throw new Error(`quickMoneyPrompts[${i}] is required.`);
+  });
+  return true;
+}
 function requireHost(req, res, next) { if (!req.session.isHost) return res.redirect('/host/login'); next(); }
 function getHostRoom(req, res) { const code = activeRoomCode(req); const room = getRoom(code); if (!room) { res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Room not found.' } }); return null; } return room; }
 
@@ -54,6 +96,31 @@ app.get('/host', requireHost, (req, res) => res.render('host', { state: getRoom(
 app.get('/host/sessions', requireHost, (req, res) => res.json({ sessions: listSessions() }));
 app.post('/host/resume', requireHost, (req, res) => { const saved = loadSession(req.body.roomCode); if (!saved) return res.status(404).json({ error: 'Session not found.' }); const room = getOrCreateRoom(saved.roomCode); room.gameState = saved.state; req.session.activeRoomCode = saved.roomCode; emitRoomState(room); res.json({ ok: true }); });
 app.post('/host/archive', requireHost, (req, res) => res.json({ ok: archiveSession(req.body.roomCode) }));
+
+app.post('/host/game-definitions', requireHost, (req, res) => {
+  try {
+    const name = safeGameDefinitionName(req.body?.name);
+    const data = req.body?.data;
+    validateGameData(data);
+    const filePath = resolveDataFileByName(name);
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+    res.status(201).json({ ok: true, name, file: path.basename(filePath) });
+  } catch (error) {
+    res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: error.message } });
+  }
+});
+
+app.get('/host/game-definitions/:name', requireHost, (req, res) => {
+  try {
+    const filePath = resolveDataFileByName(req.params.name);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Game definition not found.' } });
+    const data = loadGameData(filePath);
+    validateGameData(data);
+    res.json({ name: safeGameDefinitionName(req.params.name), data });
+  } catch (error) {
+    res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: error.message } });
+  }
+});
 
 app.post('/host/setup', requireHost, upload.single('boardFile'), (req, res) => {
   try {

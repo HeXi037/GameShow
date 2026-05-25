@@ -80,6 +80,13 @@ function renderRules() {
   form.allowRebuzzBySamePlayer.checked = Boolean(config.allowRebuzzBySamePlayer);
   form.buzzTimeoutSeconds.value = Number(config.buzzTimeoutSeconds || 0);
   form.maxAttemptsPerClue.value = config.maxAttemptsPerClue === 'unlimited' ? '' : String(config.maxAttemptsPerClue || '');
+  form.tieBreakerMode.value = config.tieBreakerMode || 'scoreFallback';
+  form.round1Multiplier.value = Number(config.roundMultipliers?.round1 || 1);
+  form.round2Multiplier.value = Number(config.roundMultipliers?.round2 || 1);
+  form.round1Values.value = Array.isArray(config.customRoundValues?.round1) ? config.customRoundValues.round1.join(',') : '';
+  form.round2Values.value = Array.isArray(config.customRoundValues?.round2) ? config.customRoundValues.round2.join(',') : '';
+  form.wrongAnswerPenaltyMode.value = config.wrongAnswerPenalty?.mode || 'fixed';
+  form.wrongAnswerPenaltyValue.value = Number(config.wrongAnswerPenalty?.value || 0);
 }
 
 function showReconnectNotice(message) {
@@ -174,7 +181,10 @@ function renderReveal() {
   const winnerPanel = `<p><b>Buzz Status:</b> ${buzzState}</p><p class="${winnerClass}"><b>Winner:</b> ${buzz.lockedBy || 'None'}</p><p><b>Lock Time:</b> ${lockTime}</p>`;
   const indicator = isMultiplier ? '<p><strong>⚡ Mogul Multiplier clue is active.</strong></p>' : '';
   const config = state.config || {};
-  const ruleSummary = `<p><b>Rules:</b> reopenOnIncorrect=${Boolean(config.reopenOnIncorrect)}, maxAttemptsPerClue=${config.maxAttemptsPerClue ?? 'unlimited'}, buzzTimeoutSeconds=${Number(config.buzzTimeoutSeconds || 0)}, allowRebuzzBySamePlayer=${Boolean(config.allowRebuzzBySamePlayer)}</p>`;
+  const tieGuidance = state.tieGuidance?.hasTie
+    ? `<p><b>Tie Guidance:</b> ${state.tieGuidance.message} (players: ${(state.tieGuidance.tiedPlayers || []).join(', ')})</p>`
+    : '<p><b>Tie Guidance:</b> No tie currently detected.</p>';
+  const ruleSummary = `<p><b>Rules:</b> reopenOnIncorrect=${Boolean(config.reopenOnIncorrect)}, maxAttemptsPerClue=${config.maxAttemptsPerClue ?? 'unlimited'}, buzzTimeoutSeconds=${Number(config.buzzTimeoutSeconds || 0)}, allowRebuzzBySamePlayer=${Boolean(config.allowRebuzzBySamePlayer)}, tieBreakerMode=${config.tieBreakerMode || 'scoreFallback'}, round1Multiplier=${Number(config.roundMultipliers?.round1 || 1)}, round2Multiplier=${Number(config.roundMultipliers?.round2 || 1)}, wrongAnswerPenalty=${config.wrongAnswerPenalty?.mode || 'fixed'}:${Number(config.wrongAnswerPenalty?.value || 0)}</p>${tieGuidance}`;
 
   if (isMultiplier) {
     multiplierCard.hidden = false;
@@ -246,7 +256,20 @@ document.getElementById('rulesForm').addEventListener('submit', async (e) => {
     reopenOnIncorrect: fd.get('reopenOnIncorrect') === 'on',
     allowRebuzzBySamePlayer: fd.get('allowRebuzzBySamePlayer') === 'on',
     buzzTimeoutSeconds: Number(fd.get('buzzTimeoutSeconds') || 0),
-    maxAttemptsPerClue: maxAttempts ? Number(maxAttempts) : 'unlimited'
+    maxAttemptsPerClue: maxAttempts ? Number(maxAttempts) : 'unlimited',
+    tieBreakerMode: fd.get('tieBreakerMode') || 'scoreFallback',
+    roundMultipliers: {
+      round1: Number(fd.get('round1Multiplier') || 1),
+      round2: Number(fd.get('round2Multiplier') || 1)
+    },
+    customRoundValues: {
+      round1: String(fd.get('round1Values') || '').split(',').map((v) => Number(v.trim())).filter((v) => Number.isFinite(v) && v > 0),
+      round2: String(fd.get('round2Values') || '').split(',').map((v) => Number(v.trim())).filter((v) => Number.isFinite(v) && v > 0)
+    },
+    wrongAnswerPenalty: {
+      mode: fd.get('wrongAnswerPenaltyMode') || 'fixed',
+      value: Number(fd.get('wrongAnswerPenaltyValue') || 0)
+    }
   });
 });
 

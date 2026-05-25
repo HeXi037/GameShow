@@ -221,3 +221,56 @@ test('getRoundBoard returns board for active round', () => {
   assert.equal(getRoundBoard(state), state.boardData.round1);
   assert.equal(getRoundBoard({ ...state, round: 2 }), state.boardData.round2);
 });
+
+test('normalizeConfig keeps safe defaults for invalid extended config', () => {
+  let state = initializeGame({ playerNames: ['A', 'B'], boardData: makeBoard() });
+  state = updateConfig(state, {
+    tieBreakerMode: 'bad-mode',
+    roundMultipliers: { round1: -1, round2: 'oops' },
+    customRoundValues: { round1: ['x'], round2: [] },
+    wrongAnswerPenalty: { mode: 'invalid', value: -20 }
+  });
+  assert.equal(state.config.tieBreakerMode, 'scoreFallback');
+  assert.deepEqual(state.config.roundMultipliers, { round1: 1, round2: 1 });
+  assert.equal(state.config.customRoundValues.round1, null);
+  assert.equal(state.config.wrongAnswerPenalty.mode, 'fixed');
+  assert.equal(state.config.wrongAnswerPenalty.value, 0);
+});
+
+test('wrong-answer penalty percent and none modes branch correctly', () => {
+  let state = initializeGame({ playerNames: ['A', 'B'], boardData: makeBoard() });
+  state.players = [{ name: 'A', score: 1000 }, { name: 'B', score: 0 }];
+  state = updateConfig(state, { wrongAnswerPenalty: { mode: 'percent', value: 10 } });
+  state = selectClue(state, 0, 0).state;
+  state = scoreClue(state, { A: 'incorrect' }).state;
+  assert.equal(state.players.find((p) => p.name === 'A').score, 900);
+
+  state = initializeGame({ playerNames: ['A', 'B'], boardData: makeBoard() });
+  state.players = [{ name: 'A', score: 1000 }, { name: 'B', score: 0 }];
+  state = updateConfig(state, { wrongAnswerPenalty: { mode: 'none', value: 0 } });
+  state = selectClue(state, 0, 0).state;
+  state = scoreClue(state, { A: 'incorrect' }).state;
+  assert.equal(state.players.find((p) => p.name === 'A').score, 1000);
+});
+
+test('round multiplier and custom values apply in scoring branches', () => {
+  let state = initializeGame({ playerNames: ['A'], boardData: makeBoard() });
+  state = updateConfig(state, { roundMultipliers: { round1: 2, round2: 3 }, customRoundValues: { round1: [111], round2: null } });
+  state = selectClue(state, 0, 0).state;
+  state = scoreClue(state, { A: 'correct' }).state;
+  assert.equal(state.players[0].score, 111);
+
+  state = { ...state, round: 2, phase: 'round2', revealedClue: { value: 200, isMogulMultiplier: true, clueIndex: 0 } };
+  state = applyMultiplier(state, { playerName: 'A', wager: 30, correct: true }).state;
+  assert.equal(state.players[0].score, 201);
+});
+
+test('tie detection emits guidance for configured modes', () => {
+  let state = initializeGame({ playerNames: ['A', 'B'], boardData: makeBoard() });
+  state = updateConfig(state, { tieBreakerMode: 'suddenDeath' });
+  state = selectClue(state, 0, 0).state;
+  state = scoreClue(state, { A: 'correct', B: 'correct' }).state;
+  assert.equal(state.tieGuidance.hasTie, true);
+  assert.equal(state.tieGuidance.mode, 'suddenDeath');
+  assert.match(state.tieGuidance.message, /sudden-death/i);
+});

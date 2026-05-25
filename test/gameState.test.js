@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { initializeGame, selectClue, scoreClue, applyMultiplier, advanceQuickMoney, openBuzz, resetBuzz, lockBuzz, applyScoreAndBuzzRules, updateConfig } = require('../src/gameState');
+const { initializeGame, selectClue, scoreClue, applyMultiplier, advanceQuickMoney, openBuzz, resetBuzz, lockBuzz, applyScoreAndBuzzRules, updateConfig, getRoundBoard, startQuickMoneyTurn } = require('../src/gameState');
 
 function makeBoard() {
   const makeRound = (values) => ({
@@ -141,4 +141,33 @@ test('buzz state transitions: open -> lock -> reset -> reopen with deterministic
   assert.equal(state.buzz.open, true);
   assert.equal(state.buzz.timeoutAt, 5000);
   Date.now = realNow;
+});
+
+
+test('startQuickMoneyTurn sets turn active and timer', () => {
+  let state = initializeGame({ playerNames: ['A', 'B'], boardData: makeBoard() });
+  state = { ...state, phase: 'quickMoney', quickMoney: { ...state.quickMoney, completed: false } };
+
+  const result = startQuickMoneyTurn(state, 15, 1000);
+  assert.equal(result.error, undefined);
+  assert.equal(result.state.quickMoney.turnActive, true);
+  assert.equal(result.state.quickMoney.timerEndsAt, 16000);
+});
+
+test('startQuickMoneyTurn validates quick money phase and completion state', () => {
+  const state = initializeGame({ playerNames: ['A', 'B'], boardData: makeBoard() });
+  assert.equal(startQuickMoneyTurn(state, 20).error, 'Quick Money is not active.');
+
+  const completedState = {
+    ...state,
+    phase: 'quickMoney',
+    quickMoney: { ...state.quickMoney, completed: true }
+  };
+  assert.equal(startQuickMoneyTurn(completedState, 20).error, 'Quick Money is already complete.');
+});
+
+test('getRoundBoard returns board for active round', () => {
+  const state = initializeGame({ playerNames: ['A'], boardData: makeBoard() });
+  assert.equal(getRoundBoard(state), state.boardData.round1);
+  assert.equal(getRoundBoard({ ...state, round: 2 }), state.boardData.round2);
 });

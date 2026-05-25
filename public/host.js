@@ -1,4 +1,5 @@
-const socket = io({ query: { role: 'host' } });
+const stateRoom = (window.__INITIAL_STATE__ && window.__INITIAL_STATE__.roomCode) || '';
+const socket = io({ query: { role: 'host', roomCode: stateRoom } });
 let state = window.__INITIAL_STATE__ || {};
 
 function setConnectionStatus(text, online) {
@@ -40,7 +41,7 @@ function renderJoinCodes() {
   }
   const rows = players.map((playerName) => {
     const code = joinCodes[playerName].code;
-    const fullLink = `${window.location.origin}${joinCodes[playerName].link}`;
+    const fullLink = `${window.location.origin}/join?room=${encodeURIComponent(state.roomCode||'')}&code=${encodeURIComponent(code)}`;
     return `<tr><td>${playerName}</td><td><code>${code}</code></td><td><a href="${fullLink}" target="_blank" rel="noopener noreferrer">${fullLink}</a></td></tr>`;
   }).join('');
   wrap.innerHTML = `<table><thead><tr><th>Player</th><th>Join Code</th><th>Join Link</th></tr></thead><tbody>${rows}</tbody></table>`;

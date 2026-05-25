@@ -21,6 +21,7 @@
       </div>
       <form method="post" action="/host/setup" enctype="multipart/form-data" class="card">
         <label>Player names (comma separated)</label>
+        <input name="roomCode" placeholder="ROOM1" required />
         <input name="playerNames" placeholder="Ludwig, QT, Slime, Atrioc" required />
         <label>Custom game JSON (optional)</label>
         <input type="file" name="boardFile" accept="application/json" />

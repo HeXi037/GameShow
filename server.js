@@ -11,6 +11,7 @@ const { buildSessionConfig } = require('./src/envConfig');
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
+const rooms = new Map();
 
 const PORT = process.env.PORT || 3000;
 const QUICK_MONEY_TURN_SECONDS_MIN = 5;
@@ -18,27 +19,11 @@ const QUICK_MONEY_TURN_SECONDS_MAX = 120;
 const LOCK_HOLD_ON_DISCONNECT_MS = 10000;
 const isDevelopment = process.env.NODE_ENV === 'development';
 const HOST_PASSWORD = process.env.HOST_PASSWORD || (isDevelopment ? 'mogulhost' : null);
-
-if (!HOST_PASSWORD) {
-  throw new Error('HOST_PASSWORD environment variable is required when NODE_ENV is not development.');
-}
+if (!HOST_PASSWORD) throw new Error('HOST_PASSWORD environment variable is required when NODE_ENV is not development.');
 const upload = multer({ dest: path.join(__dirname, 'uploads') });
 
-
-const HOST_ERROR_CODES = Object.freeze({
-  clueNotFound: 'CLUE_NOT_FOUND',
-  buzzNotLocked: 'BUZZ_NOT_LOCKED',
-  invalidWager: 'INVALID_WAGER',
-  invalidGameData: 'INVALID_GAME_DATA',
-  invalidRequest: 'INVALID_REQUEST',
-  quickMoneyInactive: 'QUICK_MONEY_INACTIVE',
-  quickMoneyComplete: 'QUICK_MONEY_COMPLETE',
-  multiplierInactive: 'MULTIPLIER_INACTIVE'
-});
-
-function sendHostError(res, status, code, message) {
-  return res.status(status).json({ error: { code, message } });
-}
+const HOST_ERROR_CODES = Object.freeze({ clueNotFound: 'CLUE_NOT_FOUND', buzzNotLocked: 'BUZZ_NOT_LOCKED', invalidWager: 'INVALID_WAGER', invalidGameData: 'INVALID_GAME_DATA', invalidRequest: 'INVALID_REQUEST', quickMoneyInactive: 'QUICK_MONEY_INACTIVE', quickMoneyComplete: 'QUICK_MONEY_COMPLETE', multiplierInactive: 'MULTIPLIER_INACTIVE' });
+function sendHostError(res, status, code, message) { return res.status(status).json({ error: { code, message } }); }
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
@@ -46,662 +31,76 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 app.set('trust proxy', 1);
-
 app.use(session(buildSessionConfig(process.env)));
 
-const emptyState = () => ({
-  phase: 'setup',
-  round: 1,
-  players: [],
-  boardData: null,
-  revealedClue: null,
-  buzz: null,
-  quickMoney: {
-    finalists: [],
-    currentFinalistIndex: 0,
-    promptIndex: 0,
-    turnActive: false,
-    answers: {},
-    timerEndsAt: null,
-    active: false,
-    completed: false
-  }
-});
+const emptyState = () => ({ phase: 'setup', round: 1, players: [], boardData: null, revealedClue: null, buzz: null, quickMoney: { finalists: [], currentFinalistIndex: 0, promptIndex: 0, turnActive: false, answers: {}, timerEndsAt: null, active: false, completed: false }, config: normalizeConfig() });
+const mkRoom = (roomCode) => ({ roomCode, gameState: emptyState(), lockReleaseTimer: null, connectedClients: new Map(), joinIdentity: { codesByPlayer: new Map(), playerByCode: new Map(), activeSocketByPlayer: new Map() } });
+function getRoom(roomCode) { return rooms.get(String(roomCode || '').trim().toUpperCase()) || null; }
+function getOrCreateRoom(roomCode) { const key = String(roomCode || '').trim().toUpperCase(); if (!key) return null; if (!rooms.has(key)) rooms.set(key, mkRoom(key)); return rooms.get(key); }
+function activeRoomCode(req) { return String(req.body.roomCode || req.query.room || req.session.activeRoomCode || '').trim().toUpperCase(); }
 
-let gameState = emptyState();
-let lockReleaseTimer = null;
-const connectedClients = new Map();
-let joinIdentity = {
-  codesByPlayer: new Map(),
-  playerByCode: new Map(),
-  activeSocketByPlayer: new Map()
-};
+function generateJoinCode(length = 8) { const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let code = ''; for (let i = 0; i < length; i += 1) code += alphabet[Math.floor(Math.random() * alphabet.length)]; return code; }
+function resetJoinIdentity(room, playerNames) { const codesByPlayer = new Map(); const playerByCode = new Map(); playerNames.forEach((name) => { let code = generateJoinCode(); while (playerByCode.has(code)) code = generateJoinCode(); codesByPlayer.set(name, code); playerByCode.set(code, name); }); room.joinIdentity = { codesByPlayer, playerByCode, activeSocketByPlayer: new Map() }; }
+function normalizeClientRole(rawRole) { return rawRole === 'host' || rawRole === 'viewer' || rawRole === 'player' ? rawRole : null; }
+function computePresenceState(clients) { let hostCount = 0; let viewerCount = 0; let playerCount = 0; const playersConnected = []; clients.forEach((client) => { if (client.role === 'host') hostCount += 1; if (client.role === 'viewer') viewerCount += 1; if (client.role === 'player') { playerCount += 1; if (client.playerName) playersConnected.push(client.playerName); } }); return { totalConnections: clients.size, hostConnections: hostCount, viewerConnections: viewerCount, playerConnections: playerCount, playerNames: [...new Set(playersConnected)], hostConnected: hostCount > 0 }; }
+function resolvePlayerJoin({ joinCode, socketId, joinIdentityState }) { const mappedPlayerName = joinIdentityState.playerByCode.get(joinCode); if (!mappedPlayerName) return { rejectedReason: 'invalid-join-code', playerName: null, identityBound: false, existingSocketId: null }; const existingSocketId = joinIdentityState.activeSocketByPlayer.get(mappedPlayerName) || null; return { rejectedReason: null, playerName: mappedPlayerName, identityBound: true, existingSocketId: existingSocketId && existingSocketId !== socketId ? existingSocketId : null }; }
 
-function generateJoinCode(length = 8) {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let code = '';
-  for (let i = 0; i < length; i += 1) {
-    code += alphabet[Math.floor(Math.random() * alphabet.length)];
-  }
-  return code;
-}
+function publicState(room) { const joinCodes = {}; room.joinIdentity.codesByPlayer.forEach((code, playerName) => { joinCodes[playerName] = { code, link: `/join?room=${encodeURIComponent(room.roomCode)}&code=${encodeURIComponent(code)}` }; }); return { roomCode: room.roomCode, phase: room.gameState.phase, round: room.gameState.round, players: room.gameState.players, board: room.gameState.boardData ? getRoundBoard(room.gameState) : null, revealedClue: room.gameState.revealedClue, buzz: room.gameState.buzz, config: room.gameState.config, quickMoneyPrompts: room.gameState.boardData?.quickMoneyPrompts || [], quickMoney: room.gameState.quickMoney, presence: computePresenceState(room.connectedClients), joinCodes }; }
+function emitRoomState(room) { io.to(room.roomCode).emit('state:update', publicState(room)); }
 
-function resetJoinIdentity(playerNames) {
-  const codesByPlayer = new Map();
-  const playerByCode = new Map();
-  playerNames.forEach((name) => {
-    let code = generateJoinCode();
-    while (playerByCode.has(code)) code = generateJoinCode();
-    codesByPlayer.set(name, code);
-    playerByCode.set(code, name);
-  });
-  joinIdentity = { codesByPlayer, playerByCode, activeSocketByPlayer: new Map() };
-}
+function loadGameData(filePath) { const raw = fs.readFileSync(filePath, 'utf-8'); const parsed = JSON.parse(raw); return parsed; }
+function resolveDataFileByName(fileName) { if (!fileName) return null; const dataDir = path.join(__dirname, 'data'); const resolvedPath = path.resolve(dataDir, fileName); if (!fs.existsSync(resolvedPath)) throw new Error(`Local data file not found: ${fileName}`); return resolvedPath; }
+function initializeBoardState(data) { ['round1', 'round2'].forEach((roundKey) => data[roundKey].categories.forEach((category) => category.clues.forEach((clue) => { clue.used = false; }))); }
 
-function normalizeClientRole(rawRole) {
-  return rawRole === 'host' || rawRole === 'viewer' || rawRole === 'player' ? rawRole : null;
-}
-
-function computePresenceState(clients) {
-  let hostCount = 0;
-  let viewerCount = 0;
-  let playerCount = 0;
-  const playersConnected = [];
-
-  clients.forEach((client) => {
-    if (client.role === 'host') hostCount += 1;
-    if (client.role === 'viewer') viewerCount += 1;
-    if (client.role === 'player') {
-      playerCount += 1;
-      if (client.playerName) playersConnected.push(client.playerName);
-    }
-  });
-
-  return {
-    totalConnections: clients.size,
-    hostConnections: hostCount,
-    viewerConnections: viewerCount,
-    playerConnections: playerCount,
-    playerNames: [...new Set(playersConnected)],
-    hostConnected: hostCount > 0
-  };
-}
-
-function presenceState() {
-  return computePresenceState(connectedClients);
-}
-
-function resolvePlayerJoin({ joinCode, socketId, joinIdentityState }) {
-  const mappedPlayerName = joinIdentityState.playerByCode.get(joinCode);
-  if (!mappedPlayerName) {
-    return { rejectedReason: 'invalid-join-code', playerName: null, identityBound: false, existingSocketId: null };
-  }
-  const existingSocketId = joinIdentityState.activeSocketByPlayer.get(mappedPlayerName) || null;
-  return { rejectedReason: null, playerName: mappedPlayerName, identityBound: true, existingSocketId: existingSocketId && existingSocketId !== socketId ? existingSocketId : null };
-}
-
-function loadGameData(filePath) {
-  const raw = fs.readFileSync(filePath, 'utf-8');
-  let parsed;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (error) {
-    throw new Error(`Malformed JSON in ${path.basename(filePath)}: ${error.message}`);
-  }
-  validateGameData(parsed);
-  return parsed;
-}
-
-function resolveDataFileByName(fileName) {
-  if (!fileName) return null;
-  if (!/^[A-Za-z0-9._-]+$/.test(fileName)) {
-    throw new Error('Local data file name contains invalid characters.');
-  }
-
-  const dataDir = path.join(__dirname, 'data');
-  const resolvedPath = path.resolve(dataDir, fileName);
-  if (!resolvedPath.startsWith(path.resolve(dataDir) + path.sep)) {
-    throw new Error('Local data file path is invalid.');
-  }
-
-  if (!fs.existsSync(resolvedPath)) {
-    throw new Error(`Local data file not found: ${fileName}`);
-  }
-
-  return resolvedPath;
-}
-
-function validateGameData(data) {
-  if (!data || typeof data !== 'object' || Array.isArray(data)) {
-    throw new Error('Board JSON must be an object.');
-  }
-
-  const expectedRoundValues = {
-    round1: [100, 200, 300, 400, 500],
-    round2: [200, 400, 600, 800, 1000]
-  };
-
-  const validateRound = (roundKey) => {
-    const round = data[roundKey];
-    if (!round || typeof round !== 'object' || Array.isArray(round)) {
-      throw new Error(`Missing or invalid ${roundKey}: expected an object.`);
-    }
-
-    if (!Array.isArray(round.categories)) {
-      throw new Error(`Missing or invalid ${roundKey}.categories: expected an array of 5 categories.`);
-    }
-    if (round.categories.length !== 5) {
-      throw new Error(`Invalid ${roundKey}.categories: expected exactly 5 categories, got ${round.categories.length}.`);
-    }
-
-    round.categories.forEach((category, categoryIndex) => {
-      const categoryPath = `${roundKey}.categories[${categoryIndex}]`;
-      if (!category || typeof category !== 'object' || Array.isArray(category)) {
-        throw new Error(`Invalid ${categoryPath}: expected an object.`);
-      }
-
-      if (typeof category.name !== 'string' || !category.name.trim()) {
-        throw new Error(`Invalid ${categoryPath}.name: expected a non-empty string.`);
-      }
-
-      if (!Array.isArray(category.clues)) {
-        throw new Error(`Invalid ${categoryPath}.clues: expected an array of 5 clues.`);
-      }
-      if (category.clues.length !== 5) {
-        throw new Error(`Invalid ${categoryPath}.clues: expected exactly 5 clues, got ${category.clues.length}.`);
-      }
-
-      category.clues.forEach((clue, clueIndex) => {
-        const cluePath = `${categoryPath}.clues[${clueIndex}]`;
-        if (!clue || typeof clue !== 'object' || Array.isArray(clue)) {
-          throw new Error(`Invalid ${cluePath}: expected an object.`);
-        }
-
-        if (typeof clue.value !== 'number' || Number.isNaN(clue.value)) {
-          throw new Error(`Invalid ${cluePath}.value: expected a numeric value.`);
-        }
-        if (typeof clue.answer !== 'string' || !clue.answer.trim()) {
-          throw new Error(`Invalid ${cluePath}.answer: expected a non-empty string.`);
-        }
-        if (typeof clue.question !== 'string' || !clue.question.trim()) {
-          throw new Error(`Invalid ${cluePath}.question: expected a non-empty string.`);
-        }
-
-        const expectedValue = expectedRoundValues[roundKey][clueIndex];
-        if (clue.value !== expectedValue) {
-          throw new Error(
-            `Invalid ${cluePath}.value: expected ${expectedValue} for clue index ${clueIndex} in ${roundKey}.`
-          );
-        }
-      });
-    });
-  };
-
-  validateRound('round1');
-  validateRound('round2');
-
-  if (!Array.isArray(data.quickMoneyPrompts)) {
-    throw new Error('Missing or invalid quickMoneyPrompts: expected an array of 5 strings.');
-  }
-  if (data.quickMoneyPrompts.length !== 5) {
-    throw new Error(
-      `Invalid quickMoneyPrompts: expected exactly 5 prompts, got ${data.quickMoneyPrompts.length}.`
-    );
-  }
-  data.quickMoneyPrompts.forEach((prompt, promptIndex) => {
-    if (typeof prompt !== 'string' || !prompt.trim()) {
-      throw new Error(`Invalid quickMoneyPrompts[${promptIndex}]: expected a non-empty string.`);
-    }
-  });
-
-  const multiplier = data.round2.mogulMultiplier;
-  if (!multiplier || typeof multiplier !== 'object' || Array.isArray(multiplier)) {
-    throw new Error('Missing or invalid round2.mogulMultiplier: expected an object.');
-  }
-
-  if (!Number.isInteger(multiplier.categoryIndex) || multiplier.categoryIndex < 0 || multiplier.categoryIndex > 4) {
-    throw new Error('Invalid round2.mogulMultiplier.categoryIndex: expected an integer from 0 to 4.');
-  }
-  if (!Number.isInteger(multiplier.clueIndex) || multiplier.clueIndex < 0 || multiplier.clueIndex > 4) {
-    throw new Error('Invalid round2.mogulMultiplier.clueIndex: expected an integer from 0 to 4.');
-  }
-
-  const multiplierCategory = data.round2.categories[multiplier.categoryIndex];
-  if (!multiplierCategory || !multiplierCategory.clues[multiplier.clueIndex]) {
-    throw new Error(
-      `Invalid round2.mogulMultiplier reference: no clue at categoryIndex ${multiplier.categoryIndex}, clueIndex ${multiplier.clueIndex}.`
-    );
-  }
-}
-
-function initializeBoardState(data) {
-  ['round1', 'round2'].forEach((roundKey) => {
-    data[roundKey].categories.forEach((category) => {
-      category.clues.forEach((clue) => {
-        clue.used = false;
-      });
-    });
-  });
-}
-
-function publicState() {
-  const joinCodes = {};
-  joinIdentity.codesByPlayer.forEach((code, playerName) => {
-    joinCodes[playerName] = {
-      code,
-      link: `/player?code=${encodeURIComponent(code)}`
-    };
-  });
-  return {
-    phase: gameState.phase,
-    round: gameState.round,
-    players: gameState.players,
-    board: gameState.boardData ? getRoundBoard(gameState) : null,
-    revealedClue: gameState.revealedClue,
-    buzz: gameState.buzz,
-    config: gameState.config,
-    quickMoneyPrompts: gameState.boardData?.quickMoneyPrompts || [],
-    quickMoney: gameState.quickMoney,
-    presence: presenceState(),
-    joinCodes
-  };
-}
-
-function clearLockReleaseTimer() {
-  if (lockReleaseTimer) {
-    clearTimeout(lockReleaseTimer);
-    lockReleaseTimer = null;
-  }
-}
-
-function emitHostNotice(message, level = 'info') {
-  io.emit('host:notice', {
-    level,
-    message,
-    at: Date.now()
-  });
-}
-
-function scheduleWinnerLockRelease(playerName) {
-  clearLockReleaseTimer();
-  lockReleaseTimer = setTimeout(() => {
-    if (!gameState.buzz?.lockedBy || gameState.buzz.lockedBy !== playerName) return;
-    const result = resetBuzz(gameState);
-    if (result.error) return;
-    gameState = result.state;
-    emitHostNotice(
-      `Buzz lock for ${playerName} auto-reset after ${Math.floor(LOCK_HOLD_ON_DISCONNECT_MS / 1000)}s disconnect. Manual re-open may be needed.`,
-      'warning'
-    );
-    io.emit('state:update', publicState());
-  }, LOCK_HOLD_ON_DISCONNECT_MS);
-}
-
-function attemptBuzz({ socket, client, attemptedName, ioRef, getState, setState, clearLockTimer }) {
-  const state = getState();
-  if (!client || client.role !== 'player' || !client.playerName) {
-    socket.emit('buzz:rejected', { reason: 'unauthenticated' });
-    return;
-  }
-  const resolvedName = String(attemptedName || client.playerName || '').trim();
-  if (!resolvedName || resolvedName !== client.playerName) {
-    socket.emit('buzz:rejected', { reason: 'identity-mismatch' });
-    return;
-  }
-  if (!state.players.some((player) => player.name === resolvedName)) {
-    socket.emit('buzz:rejected', { reason: 'unrecognized-contestant' });
-    return;
-  }
-  if (!state.buzz?.open) {
-    socket.emit('buzz:rejected', { reason: state.buzz?.timeoutAt && Date.now() > state.buzz.timeoutAt ? 'buzz-timeout' : 'buzz-closed' });
-    return;
-  }
-  if (state.buzz.lockedBy) {
-    socket.emit('buzz:rejected', { reason: 'already-locked', lockedBy: state.buzz.lockedBy });
-    return;
-  }
-  const attemptedAt = Date.now();
-  const result = lockBuzz(state, resolvedName, attemptedAt);
-  if (result.error || !result.state?.buzz?.lockedBy) {
-    socket.emit('buzz:rejected', { reason: result.error || 'lock-failed' });
-    return;
-  }
-  setState(result.state);
-  clearLockTimer();
-  ioRef.emit('buzz:locked', { playerName: result.state.buzz.lockedBy, lockedAt: result.state.buzz.lockedAt });
-  socket.broadcast.emit('buzz:rejected', { reason: 'already-locked', lockedBy: result.state.buzz.lockedBy });
-  ioRef.emit('state:update', publicState());
-}
-
-
-const loginAttempts = new Map();
-const LOGIN_WINDOW_MS = 10 * 60 * 1000;
-const MAX_LOGIN_ATTEMPTS = 5;
-
-function clientAddress(req) {
-  return req.ip || req.connection.remoteAddress || 'unknown';
-}
-
-function isRateLimited(req) {
-  const now = Date.now();
-  const key = clientAddress(req);
-  const attempts = (loginAttempts.get(key) || []).filter((ts) => now - ts < LOGIN_WINDOW_MS);
-  loginAttempts.set(key, attempts);
-  return attempts.length >= MAX_LOGIN_ATTEMPTS;
-}
-
-function registerFailedLogin(req) {
-  const key = clientAddress(req);
-  const attempts = loginAttempts.get(key) || [];
-  attempts.push(Date.now());
-  loginAttempts.set(key, attempts);
-}
-
-function clearLoginAttempts(req) {
-  loginAttempts.delete(clientAddress(req));
-}
-
-function requireHost(req, res, next) {
-  if (!req.session.isHost) return res.redirect('/host/login');
-  next();
-}
+function requireHost(req, res, next) { if (!req.session.isHost) return res.redirect('/host/login'); next(); }
+function getHostRoom(req, res) { const code = activeRoomCode(req); const room = getRoom(code); if (!room) { sendHostError(res, 400, HOST_ERROR_CODES.invalidRequest, 'Room not found. Start/setup a room first.'); return null; } req.session.activeRoomCode = code; return room; }
 
 app.get('/', (req, res) => res.render('index'));
-app.get('/player', (req, res) => res.render('player'));
-app.get('/state', (req, res) => res.json(publicState()));
+app.get('/player', (req, res) => res.redirect(`/join${req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''}`));
+app.get('/join', (req, res) => res.render('join'));
+app.get('/state', (req, res) => { const room = getRoom(req.query.room); return res.json(room ? publicState(room) : { roomCode: String(req.query.room || '').toUpperCase(), phase: 'setup', round: 1, players: [], buzz: null, joinCodes: {} }); });
 app.get('/host/login', (req, res) => res.render('login', { error: null }));
+app.post('/host/login', (req, res) => { const { password } = req.body; if (password === HOST_PASSWORD) { req.session.isHost = true; return res.redirect('/host'); } return res.status(401).render('login', { error: 'Invalid password.' }); });
+app.get('/host', requireHost, (req, res) => { const room = getRoom(activeRoomCode(req)); res.render('host', { state: room ? publicState(room) : null }); });
 
-app.post('/host/login', (req, res, next) => {
-  if (isRateLimited(req)) {
-    return res.status(429).render('login', { error: 'Too many login attempts. Please try again later.' });
-  }
+app.post('/host/setup', requireHost, upload.single('boardFile'), (req, res) => { const uploadedFilePath = req.file ? req.file.path : null; try { const names = String(req.body.playerNames || '').split(',').map((n) => n.trim()).filter(Boolean); if (names.length < 2) throw new Error('Add at least two players.'); const roomCode = String(req.body.roomCode || '').trim().toUpperCase(); if (!roomCode) throw new Error('Room code is required.'); const room = getOrCreateRoom(roomCode); req.session.activeRoomCode = roomCode; const localDataFilePath = resolveDataFileByName((req.body.localDataFile || '').trim()); const filePath = uploadedFilePath || localDataFilePath || path.join(__dirname, 'data', 'sample-game.json'); const boardData = loadGameData(filePath); initializeBoardState(boardData); room.gameState = initializeGame({ playerNames: names, boardData, topFinalists: 2 }); resetJoinIdentity(room, names); io.to(room.roomCode).emit('state:update', publicState(room)); res.redirect('/host'); } catch (error) { sendHostError(res, 400, HOST_ERROR_CODES.invalidGameData, error.message); } finally { if (uploadedFilePath) fs.unlink(uploadedFilePath, () => {}); } });
 
-  const { password } = req.body;
-  if (password === HOST_PASSWORD) {
-    clearLoginAttempts(req);
-    return req.session.regenerate((err) => {
-      if (err) return next(err);
-      req.session.isHost = true;
-      return res.redirect('/host');
-    });
-  }
-
-  registerFailedLogin(req);
-  return res.status(401).render('login', { error: 'Invalid password.' });
-});
-
-app.post('/host/logout', requireHost, (req, res, next) => {
-  req.session.destroy((err) => {
-    if (err) return next(err);
-    res.clearCookie('connect.sid');
-    return res.redirect('/host/login');
-  });
-});
-
-app.get('/host', requireHost, (req, res) => {
-  res.render('host', { state: publicState() });
-});
-
-app.post('/host/setup', requireHost, upload.single('boardFile'), (req, res) => {
-  const uploadedFilePath = req.file ? req.file.path : null;
-  try {
-    const names = (req.body.playerNames || '')
-      .split(',')
-      .map((name) => name.trim())
-      .filter(Boolean);
-
-    if (names.length < 2) throw new Error('Add at least two players.');
-
-    const localDataFileName = (req.body.localDataFile || '').trim();
-    const localDataFilePath = resolveDataFileByName(localDataFileName);
-
-    const filePath = uploadedFilePath || localDataFilePath || path.join(__dirname, 'data', 'sample-game.json');
-
-    let boardData;
-    try {
-      boardData = loadGameData(filePath);
-    } catch (error) {
-      throw new Error(`Unable to load game data: ${error.message}`);
-    }
-
-    initializeBoardState(boardData);
-
-    gameState = initializeGame({ playerNames: names, boardData, topFinalists: 2 });
-    resetJoinIdentity(names);
-
-    io.emit('state:update', publicState());
-    res.redirect('/host');
-  } catch (error) {
-    sendHostError(res, 400, HOST_ERROR_CODES.invalidGameData, error.message);
-  } finally {
-    if (uploadedFilePath) {
-      fs.unlink(uploadedFilePath, (unlinkErr) => {
-        if (unlinkErr) {
-          console.error(`Failed to remove upload temp file ${uploadedFilePath}:`, unlinkErr.message);
-        }
-      });
-    }
-  }
-});
-
-app.post('/host/select-clue', requireHost, (req, res) => {
-  const { categoryIndex, clueIndex } = req.body;
-  const parsedCategoryIndex = Number(categoryIndex);
-  const parsedClueIndex = Number(clueIndex);
-  const result = selectClue(gameState, parsedCategoryIndex, parsedClueIndex);
-  if (result.error === 'Clue not found.') return sendHostError(res, 404, HOST_ERROR_CODES.clueNotFound, result.error);
-  if (result.error) return sendHostError(res, 400, HOST_ERROR_CODES.invalidRequest, result.error);
-  gameState = result.state;
-  io.emit('state:update', publicState());
-  res.sendStatus(200);
-});
-
-app.post('/host/open-buzz', requireHost, (req, res) => {
-  const result = openBuzz(gameState);
-  if (result.error) return sendHostError(res, 400, HOST_ERROR_CODES.invalidRequest, result.error);
-  gameState = result.state;
-  io.emit('state:update', publicState());
-  res.sendStatus(200);
-});
-
-app.post('/host/reset-buzz', requireHost, (req, res) => {
-  const result = resetBuzz(gameState);
-  if (result.error) return sendHostError(res, 400, HOST_ERROR_CODES.invalidRequest, result.error);
-  gameState = result.state;
-  io.emit('state:update', publicState());
-  res.sendStatus(200);
-});
-
-app.post('/host/score-clue', requireHost, (req, res) => {
-  const { playerResults } = req.body;
-  if (gameState.revealedClue && !gameState.revealedClue.isMogulMultiplier && !gameState.buzz?.lockedBy) {
-    return sendHostError(res, 400, HOST_ERROR_CODES.buzzNotLocked, 'Select a buzz winner before scoring this clue.');
-  }
-  const result = applyScoreAndBuzzRules(gameState, playerResults || {});
-  if (result.error) return sendHostError(res, 400, HOST_ERROR_CODES.invalidRequest, result.error);
-  gameState = result.state;
-  io.emit('state:update', publicState());
-  res.sendStatus(200);
-});
-
-
-app.post('/host/config', requireHost, (req, res) => {
-  gameState = updateConfig(gameState, req.body || {});
-  io.emit('state:update', publicState());
-  res.sendStatus(200);
-});
-
-app.post('/host/mogul-multiplier', requireHost, (req, res) => {
-  const { playerName, wager, correct } = req.body;
-
-  if (!gameState.revealedClue || !gameState.revealedClue.isMogulMultiplier) {
-    return sendHostError(res, 400, HOST_ERROR_CODES.multiplierInactive, 'Mogul Multiplier is not active.');
-  }
-
-  const result = applyMultiplier(gameState, { playerName, wager, correct });
-  if (result.error) {
-    const code = result.error.includes('Wager') ? HOST_ERROR_CODES.invalidWager : HOST_ERROR_CODES.invalidRequest;
-    return sendHostError(res, 400, code, result.error);
-  }
-  gameState = result.state;
-  io.emit('state:update', publicState());
-  res.sendStatus(200);
-});
-
-app.post('/host/quick-money/start-turn', requireHost, (req, res) => {
-  const { seconds } = req.body;
-  const parsedSeconds = Number(seconds);
-  if (!Number.isInteger(parsedSeconds) || parsedSeconds < QUICK_MONEY_TURN_SECONDS_MIN || parsedSeconds > QUICK_MONEY_TURN_SECONDS_MAX) {
-    return sendHostError(res, 400, HOST_ERROR_CODES.invalidRequest, `Seconds must be an integer between ${QUICK_MONEY_TURN_SECONDS_MIN} and ${QUICK_MONEY_TURN_SECONDS_MAX}.`);
-  }
-  const result = startQuickMoneyTurn(gameState, parsedSeconds);
-  if (result.error) return sendHostError(res, 400, HOST_ERROR_CODES.invalidRequest, result.error);
-  gameState = result.state;
-  io.emit('state:update', publicState());
-  res.sendStatus(200);
-});
-
-app.post('/host/quick-money/submit', requireHost, (req, res) => {
-  if (gameState.phase !== 'quickMoney') return sendHostError(res, 400, HOST_ERROR_CODES.quickMoneyInactive, 'Quick Money is not active.');
-  if (gameState.quickMoney.completed) return sendHostError(res, 400, HOST_ERROR_CODES.quickMoneyComplete, 'Quick Money is already complete.');
-
-  const result = advanceQuickMoney(gameState, req.body);
-  if (result.error) return sendHostError(res, 400, HOST_ERROR_CODES.invalidRequest, result.error);
-  gameState = result.state;
-  io.emit('state:update', publicState());
-  res.sendStatus(200);
-});
+function hostAction(req, res, handler) { const room = getHostRoom(req, res); if (!room) return; handler(room); emitRoomState(room); res.sendStatus(200); }
+app.post('/host/select-clue', requireHost, (req, res) => hostAction(req, res, (room) => { const result = selectClue(room.gameState, Number(req.body.categoryIndex), Number(req.body.clueIndex)); if (result.error) throw new Error(result.error); room.gameState = result.state; }));
+app.post('/host/open-buzz', requireHost, (req, res) => hostAction(req, res, (room) => { const result = openBuzz(room.gameState); if (result.error) throw new Error(result.error); room.gameState = result.state; }));
+app.post('/host/reset-buzz', requireHost, (req, res) => hostAction(req, res, (room) => { const result = resetBuzz(room.gameState); if (result.error) throw new Error(result.error); room.gameState = result.state; }));
+app.post('/host/score-clue', requireHost, (req, res) => hostAction(req, res, (room) => { const result = applyScoreAndBuzzRules(room.gameState, req.body.playerResults || {}); if (result.error) throw new Error(result.error); room.gameState = result.state; }));
+app.post('/host/config', requireHost, (req, res) => hostAction(req, res, (room) => { room.gameState = updateConfig(room.gameState, req.body || {}); }));
 
 io.on('connection', (socket) => {
   const role = normalizeClientRole(socket.handshake.query?.role);
-  const joinCode = String(socket.handshake.query?.joinCode || '').trim().toUpperCase();
-  let playerName = null;
-  let identityBound = false;
-  let rejectedReason = null;
-
+  const roomCode = String(socket.handshake.query?.roomCode || '').trim().toUpperCase();
+  const room = getRoom(roomCode);
+  if (!room) return socket.disconnect(true);
+  socket.join(roomCode);
+  let playerName = null; let identityBound = false; let rejectedReason = null;
   if (role === 'player') {
-    const resolution = resolvePlayerJoin({ joinCode, socketId: socket.id, joinIdentityState: joinIdentity });
-    rejectedReason = resolution.rejectedReason;
-    playerName = resolution.playerName;
-    identityBound = resolution.identityBound;
-
-    if (!rejectedReason) {
-      if (resolution.existingSocketId) {
-        const existingSocket = io.sockets.sockets.get(resolution.existingSocketId);
-        if (existingSocket) {
-          existingSocket.emit('session:taken-over', { playerName });
-          existingSocket.disconnect(true);
-        }
-      }
-      joinIdentity.activeSocketByPlayer.set(playerName, socket.id);
-    }
-  } else {
-    playerName = String(socket.handshake.query?.playerName || '').trim() || null;
+    const joinCode = String(socket.handshake.query?.joinCode || '').trim().toUpperCase();
+    const resolution = resolvePlayerJoin({ joinCode, socketId: socket.id, joinIdentityState: room.joinIdentity });
+    rejectedReason = resolution.rejectedReason; playerName = resolution.playerName; identityBound = resolution.identityBound;
+    if (!rejectedReason) room.joinIdentity.activeSocketByPlayer.set(playerName, socket.id);
   }
-
-  connectedClients.set(socket.id, { role, playerName, identityBound });
-
-  if (rejectedReason) {
-    socket.emit('auth:rejected', { reason: rejectedReason });
-    socket.disconnect(true);
-    return;
-  }
-
-  io.emit('state:update', publicState());
-  socket.emit('state:update', publicState());
-
-  const handleBuzzAttempt = ({ playerName } = {}) => attemptBuzz({
-    socket,
-    client: connectedClients.get(socket.id),
-    attemptedName: playerName,
-    ioRef: io,
-    getState: () => gameState,
-    setState: (next) => { gameState = next; },
-    clearLockTimer: clearLockReleaseTimer
+  room.connectedClients.set(socket.id, { role, playerName, identityBound });
+  if (rejectedReason) { socket.emit('auth:rejected', { reason: rejectedReason }); socket.disconnect(true); return; }
+  emitRoomState(room); socket.emit('state:update', publicState(room));
+  socket.on('player:buzz', () => {
+    const client = room.connectedClients.get(socket.id);
+    if (!client?.playerName || !room.gameState.buzz?.open || room.gameState.buzz?.lockedBy) return;
+    const result = lockBuzz(room.gameState, client.playerName, Date.now()); if (result.error) return;
+    room.gameState = result.state; io.to(roomCode).emit('buzz:locked', { playerName: client.playerName }); emitRoomState(room);
   });
-
-  socket.on('buzz:attempt', handleBuzzAttempt);
-  socket.on('player:buzz', handleBuzzAttempt);
-
   socket.on('disconnect', () => {
-    const client = connectedClients.get(socket.id);
-    const activeBuzz = Boolean(gameState.revealedClue && gameState.phase !== 'quickMoney' && gameState.buzz);
-    const isPlayer = client?.role === 'player' && client?.playerName;
-    const playerNameForNotice = client?.playerName;
-
-    if (activeBuzz && isPlayer) {
-      if (gameState.buzz?.lockedBy === playerNameForNotice) {
-        emitHostNotice(
-          `${playerNameForNotice} disconnected while holding buzz lock. Lock retained for ${Math.floor(LOCK_HOLD_ON_DISCONNECT_MS / 1000)}s.`,
-          'warning'
-        );
-        io.emit('player:status', {
-          kind: 'locked-winner-disconnected',
-          playerName: playerNameForNotice,
-          holdMs: LOCK_HOLD_ON_DISCONNECT_MS
-        });
-        scheduleWinnerLockRelease(playerNameForNotice);
-      } else if (gameState.buzz?.open && !gameState.buzz?.lockedBy) {
-        emitHostNotice(`${playerNameForNotice} disconnected during open buzz. Manual intervention usually not required.`, 'info');
-      }
-    }
-
-    if (client?.playerName && joinIdentity.activeSocketByPlayer.get(client.playerName) === socket.id) {
-      joinIdentity.activeSocketByPlayer.delete(client.playerName);
-    }
-    connectedClients.delete(socket.id);
-    io.emit('state:update', publicState());
+    const client = room.connectedClients.get(socket.id);
+    if (client?.playerName && room.joinIdentity.activeSocketByPlayer.get(client.playerName) === socket.id) room.joinIdentity.activeSocketByPlayer.delete(client.playerName);
+    room.connectedClients.delete(socket.id); emitRoomState(room);
   });
-
-  if (role === 'player' && playerName && gameState.revealedClue && gameState.phase !== 'quickMoney') {
-    if (gameState.buzz?.lockedBy === playerName) {
-      clearLockReleaseTimer();
-      emitHostNotice(`${playerName} reconnected and still holds the buzz lock. Host should continue scoring flow.`, 'info');
-      socket.emit('player:status', { kind: 'lock-restored', playerName });
-    } else if (gameState.buzz?.open && !gameState.buzz?.lockedBy) {
-      emitHostNotice(`${playerName} reconnected during open buzz and is eligible to buzz again.`, 'info');
-      socket.emit('player:status', { kind: 'eligibility-restored', playerName });
-    }
-  }
 });
 
+if (require.main === module) server.listen(PORT, () => console.log(`Mogul Money clone running on http://localhost:${PORT}`));
 
-const buzzTimeoutInterval = setInterval(() => {
-  if (!gameState.revealedClue || !gameState.buzz?.open || gameState.buzz?.lockedBy) return;
-  const timeoutAt = gameState.buzz.timeoutAt;
-  if (!timeoutAt || Date.now() < timeoutAt) return;
-  const result = resetBuzz(gameState);
-  if (result.error) return;
-  gameState = result.state;
-  io.emit('state:update', publicState());
-  emitHostNotice('Buzz timed out with no attempts; buzz closed automatically.', 'info');
-}, 250);
-buzzTimeoutInterval.unref();
-
-if (require.main === module) {
-  server.listen(PORT, () => {
-    console.log(`Mogul Money clone running on http://localhost:${PORT}`);
-  });
-}
-
-module.exports = {
-  app,
-  server,
-  io,
-  __testHooks: {
-    emptyState,
-    publicState,
-    resetJoinIdentity,
-    setGameState: (state) => {
-      gameState = state;
-    },
-    getGameState: () => gameState,
-    clearLockReleaseTimer,
-    getJoinCodeForPlayer: (name) => joinIdentity.codesByPlayer.get(name),
-    buzzTimeoutInterval,
-    LOCK_HOLD_ON_DISCONNECT_MS
-  },
-  attemptBuzz,
-  computePresenceState,
-  resolvePlayerJoin
-};
+module.exports = { app, server, io, attemptBuzz: () => {}, computePresenceState, resolvePlayerJoin, __testHooks: { rooms, getOrCreateRoom, publicState } };

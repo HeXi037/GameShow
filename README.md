@@ -29,6 +29,17 @@ Then open:
 
 Default host password is `mogulhost` in development only (`NODE_ENV=development`). In non-development deployments, `HOST_PASSWORD` is required and the app will fail to start if it is missing.
 
+
+## Production Requirements
+
+For `NODE_ENV=production`, set these environment variables before starting the server:
+
+- `HOST_PASSWORD` (required): strong host/admin password.
+- `SESSION_SECRET` (required): long random secret used to sign session cookies.
+- `COOKIE_SECURE` (must not be `false`): production always forces secure cookies; setting `COOKIE_SECURE=false` now fails startup to prevent insecure deployment.
+
+Production session cookies are forced to `secure=true` and are assigned a fixed `maxAge` for safer defaults.
+
 ## Loading Custom JSON Game Data
 You can start a game using either an uploaded JSON file or a pre-existing file in `data/`.
 

@@ -6,6 +6,7 @@ const multer = require('multer');
 const session = require('express-session');
 const { Server } = require('socket.io');
 const { initializeGame, selectClue, scoreClue, applyMultiplier, advanceQuickMoney, openBuzz, resetBuzz, lockBuzz, applyScoreAndBuzzRules, updateConfig, normalizeConfig, getRoundBoard, startQuickMoneyTurn } = require('./src/gameState');
+const { buildSessionConfig } = require('./src/envConfig');
 
 const app = express();
 const server = http.createServer(app);
@@ -30,18 +31,7 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 app.set('trust proxy', 1);
 
-app.use(
-  session({
-    secret: process.env.SESSION_SECRET || 'mogul-money-secret',
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.COOKIE_SECURE === 'true'
-    }
-  })
-);
+app.use(session(buildSessionConfig(process.env)));
 
 const emptyState = () => ({
   phase: 'setup',

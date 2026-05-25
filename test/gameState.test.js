@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { initializeGame, selectClue, scoreClue, applyMultiplier, advanceQuickMoney, openBuzz, lockBuzz, applyScoreAndBuzzRules, updateConfig } = require('../src/gameState');
+const { initializeGame, selectClue, scoreClue, applyMultiplier, advanceQuickMoney, openBuzz, resetBuzz, lockBuzz, applyScoreAndBuzzRules, updateConfig } = require('../src/gameState');
 
 function makeBoard() {
   const makeRound = (values) => ({
@@ -113,4 +113,32 @@ test('maxAttemptsPerClue enforces clue close after configured attempts', () => {
   state = lockBuzz(state, 'A').state;
   state = applyScoreAndBuzzRules(state, { A: 'incorrect' }).state;
   assert.equal(state.revealedClue, null);
+});
+
+test('buzz state transitions: open -> lock -> reset -> reopen with deterministic timestamps', () => {
+  const realNow = Date.now;
+  Date.now = () => 1000;
+  let state = initializeGame({ playerNames: ['A', 'B'], boardData: makeBoard() });
+  state = updateConfig(state, { buzzTimeoutSeconds: 3 });
+  state = selectClue(state, 0, 0).state;
+  state = openBuzz(state).state;
+  assert.equal(state.buzz.open, true);
+  assert.equal(state.buzz.timeoutAt, 4000);
+
+  state = lockBuzz(state, 'A', 1500).state;
+  assert.equal(state.buzz.open, false);
+  assert.equal(state.buzz.lockedBy, 'A');
+  assert.equal(state.buzz.lockedAt, 1500);
+  assert.deepEqual(state.buzz.attempts, [{ playerName: 'A', at: 1500 }]);
+
+  state = resetBuzz(state).state;
+  assert.equal(state.buzz.open, false);
+  assert.equal(state.buzz.lockedBy, null);
+  assert.equal(state.buzz.lockedAt, null);
+
+  Date.now = () => 2000;
+  state = openBuzz(state).state;
+  assert.equal(state.buzz.open, true);
+  assert.equal(state.buzz.timeoutAt, 5000);
+  Date.now = realNow;
 });

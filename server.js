@@ -5,7 +5,7 @@ const http = require('http');
 const multer = require('multer');
 const session = require('express-session');
 const { Server } = require('socket.io');
-const { initializeGame, selectClue, scoreClue, applyMultiplier, advanceQuickMoney, openBuzz, resetBuzz, lockBuzz, applyScoreAndBuzzRules, updateConfig, normalizeConfig } = require('./src/gameState');
+const { initializeGame, selectClue, scoreClue, applyMultiplier, advanceQuickMoney, openBuzz, resetBuzz, lockBuzz, applyScoreAndBuzzRules, updateConfig, normalizeConfig, getRoundBoard, startQuickMoneyTurn } = require('./src/gameState');
 
 const app = express();
 const server = http.createServer(app);
@@ -263,31 +263,6 @@ function initializeBoardState(data) {
   });
 }
 
-function getRoundBoard(round) {
-  return round === 1 ? gameState.boardData.round1 : gameState.boardData.round2;
-}
-
-function sortPlayers() {
-  gameState.players.sort((a, b) => b.score - a.score);
-}
-
-function initializeQuickMoney(topN = 2) {
-  const finalists = [...gameState.players].slice(0, Number(topN) || 2).map((p) => p.name);
-  gameState.quickMoney.finalists = finalists;
-  gameState.quickMoney.currentFinalistIndex = 0;
-  gameState.quickMoney.promptIndex = 0;
-  gameState.quickMoney.turnActive = false;
-  gameState.quickMoney.answers = {};
-  gameState.quickMoney.timerEndsAt = null;
-  gameState.quickMoney.active = finalists.length > 0;
-  gameState.quickMoney.completed = finalists.length === 0;
-}
-
-function allCluesUsed(round) {
-  const board = getRoundBoard(round);
-  return board.categories.every((cat) => cat.clues.every((clue) => clue.used));
-}
-
 function publicState() {
   const joinCodes = {};
   joinIdentity.codesByPlayer.forEach((code, playerName) => {
@@ -300,7 +275,7 @@ function publicState() {
     phase: gameState.phase,
     round: gameState.round,
     players: gameState.players,
-    board: gameState.boardData ? getRoundBoard(gameState.round) : null,
+    board: gameState.boardData ? getRoundBoard(gameState) : null,
     revealedClue: gameState.revealedClue,
     buzz: gameState.buzz,
     config: gameState.config,
@@ -550,11 +525,10 @@ app.post('/host/mogul-multiplier', requireHost, (req, res) => {
 });
 
 app.post('/host/quick-money/start-turn', requireHost, (req, res) => {
-  if (gameState.phase !== 'quickMoney') return res.status(400).send('Quick Money is not active.');
-  if (gameState.quickMoney.completed) return res.status(400).send('Quick Money is already complete.');
   const { seconds } = req.body;
-  gameState.quickMoney.turnActive = true;
-  gameState.quickMoney.timerEndsAt = Date.now() + Number(seconds || 20) * 1000;
+  const result = startQuickMoneyTurn(gameState, seconds);
+  if (result.error) return res.status(400).send(result.error);
+  gameState = result.state;
   io.emit('state:update', publicState());
   res.sendStatus(200);
 });

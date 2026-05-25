@@ -296,8 +296,24 @@ function applyScoreAndBuzzRules(state, playerResults = {}) {
   };
 }
 
+function startQuickMoneyTurn(state, seconds = 20, now = Date.now()) {
+  if (state.phase !== 'quickMoney') return { state, error: 'Quick Money is not active.' };
+  if (state.quickMoney.completed) return { state, error: 'Quick Money is already complete.' };
+
+  return {
+    state: {
+      ...state,
+      quickMoney: {
+        ...state.quickMoney,
+        turnActive: true,
+        timerEndsAt: Number(now) + (Number(seconds || 20) * 1000)
+      }
+    }
+  };
+}
+
 function updateConfig(state, configPatch = {}) {
   return { ...state, config: normalizeConfig({ ...(state.config || {}), ...configPatch }) };
 }
 
-module.exports = { initializeGame, selectClue, scoreClue, applyMultiplier, advanceQuickMoney, initializeQuickMoney, allCluesUsed, openBuzz, resetBuzz, lockBuzz, applyScoreAndBuzzRules, updateConfig, normalizeConfig };
+module.exports = { initializeGame, selectClue, scoreClue, applyMultiplier, advanceQuickMoney, initializeQuickMoney, allCluesUsed, openBuzz, resetBuzz, lockBuzz, applyScoreAndBuzzRules, updateConfig, normalizeConfig, getRoundBoard, startQuickMoneyTurn };

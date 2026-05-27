@@ -16,6 +16,12 @@ function makeBoard() {
   };
 }
 
+
+test('initializeGame supports non-default topFinalists', () => {
+  const state = initializeGame({ playerNames: ['A', 'B', 'C', 'D'], boardData: makeBoard(), topFinalists: 4 });
+  assert.equal(state.quickMoney.topFinalists, 4);
+});
+
 test('variable-player score updates (+/-/skip)', () => {
   let state = initializeGame({ playerNames: ['A', 'B', 'C'], boardData: makeBoard() });
   state = selectClue(state, 0, 0).state;

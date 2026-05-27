@@ -124,12 +124,15 @@ app.get('/host/game-definitions/:name', requireHost, (req, res) => {
 
 app.post('/host/setup', requireHost, upload.single('boardFile'), (req, res) => {
   try {
-    const roomCode = String(req.body.roomCode || '').trim().toUpperCase();
-    const names = String(req.body.playerNames || '').split(',').map((n) => n.trim()).filter(Boolean);
+    const requestBody = req.body || {};
+    const roomCode = String(requestBody.roomCode || '').trim().toUpperCase();
+    const names = String(requestBody.playerNames || '').split(',').map((n) => n.trim()).filter(Boolean);
+    const parsedTopFinalists = parseTopFinalists(requestBody.topFinalists ?? 2);
+    if (parsedTopFinalists.error) return res.status(400).json({ error: parsedTopFinalists.error });
     const room = getOrCreateRoom(roomCode);
-    const filePath = req.file ? req.file.path : path.join(__dirname, 'data', req.body.localDataFile || 'sample-game.json');
+    const filePath = req.file ? req.file.path : path.join(__dirname, 'data', requestBody.localDataFile || 'sample-game.json');
     const boardData = loadGameData(filePath); initializeBoardState(boardData);
-    room.gameState = initializeGame({ playerNames: names, boardData, topFinalists: 2 });
+    room.gameState = initializeGame({ playerNames: names, boardData, topFinalists: parsedTopFinalists.value });
     resetJoinIdentity(room, names);
     req.session.activeRoomCode = roomCode;
     persistRoom(room); emitRoomState(room);

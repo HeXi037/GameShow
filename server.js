@@ -7,7 +7,7 @@ const session = require('express-session');
 const { Server } = require('socket.io');
 const { initializeGame, selectClue, applyMultiplier, advanceQuickMoney, openBuzz, resetBuzz, lockBuzz, applyScoreAndBuzzRules, updateConfig, normalizeConfig, getRoundBoard, startQuickMoneyTurn } = require('./src/gameState');
 const { buildSessionConfig } = require('./src/envConfig');
-const { saveSession, loadSession, listSessions, archiveSession } = require('./src/sessionStore');
+const { saveSession, loadSession, listSessions, archiveSession, getSessionExportJSON, getSessionExportCSV } = require('./src/sessionStore');
 
 const app = express();
 const server = http.createServer(app);
@@ -96,6 +96,33 @@ app.get('/host', requireHost, (req, res) => res.render('host', { state: getRoom(
 app.get('/host/sessions', requireHost, (req, res) => res.json({ sessions: listSessions() }));
 app.post('/host/resume', requireHost, (req, res) => { const saved = loadSession(req.body.roomCode); if (!saved) return res.status(404).json({ error: 'Session not found.' }); const room = getOrCreateRoom(saved.roomCode); room.gameState = saved.state; req.session.activeRoomCode = saved.roomCode; emitRoomState(room); res.json({ ok: true }); });
 app.post('/host/archive', requireHost, (req, res) => res.json({ ok: archiveSession(req.body.roomCode) }));
+
+
+app.get('/host/export/:roomCode', requireHost, (req, res) => {
+  const requestedRoomCode = String(req.params.roomCode || '').trim().toUpperCase();
+  const sessionRoomCode = String(req.session.activeRoomCode || '').trim().toUpperCase();
+  if (!sessionRoomCode || requestedRoomCode !== sessionRoomCode) {
+    return res.status(403).json({ error: 'Unauthorized host context.' });
+  }
+
+  const format = String(req.query.format || 'json').toLowerCase();
+  const stamp = new Date().toISOString().slice(0, 10);
+
+  if (format === 'csv') {
+    const csvPayload = getSessionExportCSV(requestedRoomCode);
+    if (!csvPayload) return res.status(404).json({ error: 'Session not found.' });
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${requestedRoomCode}-${stamp}.csv"`);
+    return res.send(csvPayload);
+  }
+
+  const jsonPayload = getSessionExportJSON(requestedRoomCode);
+  if (!jsonPayload) return res.status(404).json({ error: 'Session not found.' });
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${requestedRoomCode}-${stamp}.json"`);
+  return res.send(JSON.stringify(jsonPayload, null, 2));
+});
+
 
 app.post('/host/game-definitions', requireHost, (req, res) => {
   try {

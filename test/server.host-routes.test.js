@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('fs');
+const path = require('path');
 
 process.env.NODE_ENV = 'development';
 const { server, __testHooks } = require('../server');
@@ -71,4 +73,38 @@ test('setup route validates topFinalists bounds', async () => {
 
   const nonInteger = await hostSetup({ roomCode: 'BAD1', playerNames: 'A,B', localDataFile: 'sample-game.json', topFinalists: 'abc' });
   assert.equal(nonInteger.status, 400);
+});
+
+
+test('export route returns JSON and CSV with correct headers', async () => {
+  saveSession('EXR1', { phase: 'round1', players: [{ name: 'A', score: 100 }] });
+  await hostPost('/host/resume', { roomCode: 'EXR1' });
+
+  const jsonRes = await fetch(`${baseUrl}/host/export/EXR1`, { headers: { Cookie: cookie } });
+  assert.equal(jsonRes.status, 200);
+  assert.match(jsonRes.headers.get('content-type') || '', /application\/json/);
+  assert.match(jsonRes.headers.get('content-disposition') || '', /attachment; filename="EXR1-\d{4}-\d{2}-\d{2}\.json"/);
+  const payload = await jsonRes.json();
+  assert.equal(payload.roomCode, 'EXR1');
+  assert.ok(Array.isArray(payload.scores));
+
+  const csvRes = await fetch(`${baseUrl}/host/export/EXR1?format=csv`, { headers: { Cookie: cookie } });
+  assert.equal(csvRes.status, 200);
+  assert.match(csvRes.headers.get('content-type') || '', /text\/csv/);
+  assert.match(csvRes.headers.get('content-disposition') || '', /attachment; filename="EXR1-\d{4}-\d{2}-\d{2}\.csv"/);
+  const csvText = await csvRes.text();
+  assert.match(csvText, /section,roomCode,phase/);
+});
+
+test('export route enforces 403 for wrong host context and 404 for missing session', async () => {
+  saveSession('EXR2', { phase: 'round1', players: [{ name: 'A', score: 10 }] });
+  await hostPost('/host/resume', { roomCode: 'EXR2' });
+
+  const forbiddenRes = await fetch(`${baseUrl}/host/export/OTHER1`, { headers: { Cookie: cookie } });
+  assert.equal(forbiddenRes.status, 403);
+
+  const sessionFile = path.join(__dirname, '..', 'data', 'sessions', 'EXR2.json');
+  fs.rmSync(sessionFile, { force: true });
+  const missingRes = await fetch(`${baseUrl}/host/export/EXR2`, { headers: { Cookie: cookie } });
+  assert.equal(missingRes.status, 404);
 });

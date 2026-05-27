@@ -81,4 +81,72 @@ function archiveSession(roomCode) {
   return true;
 }
 
-module.exports = { saveSession, loadSession, listSessions, archiveSession };
+
+function getSessionExportJSON(roomCode) {
+  const saved = loadSession(roomCode);
+  if (!saved) return null;
+  const state = saved.state || {};
+  const players = Array.isArray(state.players) ? state.players : [];
+  const sortedPlayers = [...players].sort((a, b) => Number(b?.score || 0) - Number(a?.score || 0));
+  const topScore = sortedPlayers.length ? Number(sortedPlayers[0]?.score || 0) : null;
+  const winners = sortedPlayers.filter((player) => Number(player?.score || 0) === topScore).map((player) => player.name);
+  const cluesAsked = [];
+  for (const roundKey of ['round1', 'round2']) {
+    const categories = state.boardData?.[roundKey]?.categories || [];
+    categories.forEach((category, categoryIndex) => {
+      (category?.clues || []).forEach((clue, clueIndex) => {
+        if (!clue?.used) return;
+        cluesAsked.push({
+          round: roundKey,
+          categoryIndex,
+          clueIndex,
+          category: category?.name || '',
+          value: Number(clue?.value || 0),
+          answer: clue?.answer || '',
+          question: clue?.question || ''
+        });
+      });
+    });
+  }
+  return {
+    roomCode: saved.roomCode,
+    createdAt: saved.createdAt,
+    updatedAt: saved.updatedAt,
+    archived: Boolean(saved.archived),
+    phase: state.phase || null,
+    round: Number(state.round || 0),
+    scores: players.map((player) => ({ name: player?.name || '', score: Number(player?.score || 0) })),
+    winners,
+    cluesAsked,
+    quickMoneyAnswers: state.quickMoney?.answers || {}
+  };
+}
+
+function csvEscape(value) {
+  const text = String(value ?? '');
+  if (!/[",\n]/.test(text)) return text;
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function getSessionExportCSV(roomCode) {
+  const snapshot = getSessionExportJSON(roomCode);
+  if (!snapshot) return null;
+  const rows = [];
+  const push = (row) => rows.push(row.map(csvEscape).join(','));
+  push(['section', 'roomCode', 'phase', 'round', 'name', 'score', 'winner', 'roundKey', 'category', 'categoryIndex', 'clueIndex', 'value', 'answer', 'question', 'finalist', 'promptIndex', 'points']);
+  (snapshot.scores || []).forEach((entry) => {
+    push(['score', snapshot.roomCode, snapshot.phase || '', snapshot.round || '', entry.name || '', entry.score || 0, snapshot.winners.includes(entry.name) ? 'yes' : 'no', '', '', '', '', '', '', '', '', '', '']);
+  });
+  (snapshot.cluesAsked || []).forEach((clue) => {
+    push(['clue', snapshot.roomCode, snapshot.phase || '', snapshot.round || '', '', '', '', clue.round || '', clue.category || '', clue.categoryIndex, clue.clueIndex, clue.value || '', clue.answer || '', clue.question || '', '', '', '']);
+  });
+  Object.entries(snapshot.quickMoneyAnswers || {}).forEach(([finalist, answers]) => {
+    (Array.isArray(answers) ? answers : []).forEach((entry) => {
+      push(['quickMoney', snapshot.roomCode, snapshot.phase || '', snapshot.round || '', '', '', '', '', '', '', '', '', '', '', finalist, Number(entry?.promptIndex || 0), Number(entry?.points || 0)]);
+    });
+  });
+  return rows.join('\n');
+}
+
+module.exports = { saveSession, loadSession, listSessions, archiveSession, getSessionExportJSON, getSessionExportCSV };
+

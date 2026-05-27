@@ -347,6 +347,24 @@ renderJoinCodes();
 renderRules();
 setConnectionStatus(socket.connected ? 'Connected' : 'Connecting...', socket.connected);
 
+
+function getExportRoomCode() {
+  const input = document.getElementById('exportRoomCode');
+  const value = String(input?.value || state.roomCode || '').trim().toUpperCase();
+  return value;
+}
+
+function triggerSessionExport(format) {
+  const roomCode = getExportRoomCode();
+  if (!roomCode) {
+    showOperationalNotice('Enter a room code to export.', 'warning');
+    return;
+  }
+  const url = `/host/export/${encodeURIComponent(roomCode)}?format=${encodeURIComponent(format)}`;
+  window.location.assign(url);
+}
+
+
 setInterval(renderQuickMoneyCountdown, 250);
 
 async function refreshSessions() {
@@ -370,6 +388,11 @@ async function refreshSessions() {
     await refreshSessions();
   }));
 }
+
+const exportJsonButton = document.getElementById('exportJson');
+if (exportJsonButton) exportJsonButton.addEventListener('click', () => triggerSessionExport('json'));
+const exportCsvButton = document.getElementById('exportCsv');
+if (exportCsvButton) exportCsvButton.addEventListener('click', () => triggerSessionExport('csv'));
 
 const refreshButton = document.getElementById('refreshSessions');
 if (refreshButton) refreshButton.addEventListener('click', refreshSessions);

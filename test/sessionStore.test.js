@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
-const { saveSession, loadSession, listSessions, archiveSession } = require('../src/sessionStore');
+const { saveSession, loadSession, listSessions, archiveSession, getSessionExportJSON, getSessionExportCSV } = require('../src/sessionStore');
 
 const dir = path.join(__dirname, '..', 'data', 'sessions');
 
@@ -31,4 +31,30 @@ test('list and archive sessions', () => {
   const listed = listSessions();
   assert.equal(listed.length, 1);
   assert.equal(listed[0].archived, true);
+});
+
+
+test('export helpers return normalized JSON and CSV', () => {
+  saveSession('expo1', {
+    phase: 'round2',
+    round: 2,
+    players: [{ name: 'A', score: 500 }, { name: 'B', score: 300 }],
+    boardData: {
+      round1: { categories: [{ name: 'Cat 1', clues: [{ used: true, value: 100, answer: 'Ans', question: 'Q?' }] }] },
+      round2: { categories: [] }
+    },
+    quickMoney: { answers: { A: [{ promptIndex: 0, answer: 'Alpha', points: 10 }] } }
+  });
+
+  const json = getSessionExportJSON('expo1');
+  assert.equal(json.roomCode, 'EXPO1');
+  assert.deepEqual(json.winners, ['A']);
+  assert.equal(json.cluesAsked.length, 1);
+  assert.ok(Array.isArray(json.scores));
+
+  const csv = getSessionExportCSV('expo1');
+  assert.match(csv, /section,roomCode,phase/);
+  assert.match(csv, /score,EXPO1/);
+  assert.match(csv, /clue,EXPO1/);
+  assert.match(csv, /quickMoney,EXPO1/);
 });

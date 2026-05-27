@@ -27,7 +27,7 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(session(buildSessionConfig(process.env)));
 
-const emptyState = () => ({ phase: 'setup', round: 1, players: [], boardData: null, revealedClue: null, buzz: null, quickMoney: { finalists: [], currentFinalistIndex: 0, promptIndex: 0, turnActive: false, answers: {}, timerEndsAt: null, active: false, completed: false, topFinalists: 2 }, config: normalizeConfig() });
+const emptyState = () => ({ phase: 'setup', round: 1, players: [], boardData: null, revealedClue: null, buzz: null, quickMoney: { finalists: [], currentFinalistIndex: 0, promptIndex: 0, turnActive: false, answers: {}, timerEndsAt: null, active: false, completed: false, topFinalists: 2, promptCount: 5, minPoints: 0, maxPoints: 1000 }, config: normalizeConfig() });
 const mkRoom = (roomCode) => ({ roomCode, gameState: emptyState(), connectedClients: new Map(), joinIdentity: { codesByPlayer: new Map(), playerByCode: new Map(), activeSocketByPlayer: new Map() } });
 const getRoom = (roomCode) => rooms.get(String(roomCode || '').trim().toUpperCase()) || null;
 function getOrCreateRoom(roomCode) { const key = String(roomCode || '').trim().toUpperCase(); if (!key) return null; if (!rooms.has(key)) rooms.set(key, mkRoom(key)); return rooms.get(key); }
@@ -53,6 +53,15 @@ function resolveDataFileByName(name) {
   const safeName = safeGameDefinitionName(name);
   return path.join(__dirname, 'data', `${safeName}.json`);
 }
+function parseQuickMoneyConfig(rawConfig = {}) {
+  const promptCount = Number(rawConfig.promptCount ?? 5);
+  const minPoints = Number(rawConfig.minPoints ?? 0);
+  const maxPoints = Number(rawConfig.maxPoints ?? 1000);
+  if (!Number.isInteger(promptCount) || promptCount < 3 || promptCount > 10) throw new Error('quickMoney.promptCount must be an integer between 3 and 10.');
+  if (!Number.isInteger(minPoints) || !Number.isInteger(maxPoints) || minPoints >= maxPoints) throw new Error('quickMoney.minPoints and quickMoney.maxPoints must be integers with minPoints < maxPoints.');
+  return { promptCount, minPoints, maxPoints };
+}
+
 function validateGameData(data) {
   const ensureRound = (roundName) => {
     const round = data?.[roundName];
@@ -79,10 +88,12 @@ function validateGameData(data) {
   const clueIndex = Number(mm.clueIndex);
   if (catIndex < 0 || catIndex > 4 || clueIndex < 0 || clueIndex > 4) throw new Error('round2.mogulMultiplier coordinates must be between 0 and 4.');
 
-  if (!Array.isArray(data?.quickMoneyPrompts) || data.quickMoneyPrompts.length !== 5) throw new Error('quickMoneyPrompts must include exactly 5 prompts.');
+  const quickMoneyConfig = parseQuickMoneyConfig(data?.quickMoney || {});
+  if (!Array.isArray(data?.quickMoneyPrompts) || data.quickMoneyPrompts.length !== quickMoneyConfig.promptCount) throw new Error(`quickMoneyPrompts must include exactly ${quickMoneyConfig.promptCount} prompts.`);
   data.quickMoneyPrompts.forEach((prompt, i) => {
     if (typeof prompt !== 'string' || !prompt.trim()) throw new Error(`quickMoneyPrompts[${i}] is required.`);
   });
+  data.quickMoney = quickMoneyConfig;
   return true;
 }
 function requireHost(req, res, next) { if (!req.session.isHost) return res.redirect('/host/login'); next(); }
@@ -158,11 +169,17 @@ app.post('/host/setup', requireHost, upload.single('boardFile'), (req, res) => {
     const roomCode = String(requestBody.roomCode || '').trim().toUpperCase();
     const names = String(requestBody.playerNames || '').split(',').map((n) => n.trim()).filter(Boolean);
     const parsedTopFinalists = parseTopFinalists(requestBody.topFinalists ?? 2);
+    const parsedQuickMoneyConfig = parseQuickMoneyConfig({
+      promptCount: requestBody.quickMoneyPromptCount,
+      minPoints: requestBody.quickMoneyMinPoints,
+      maxPoints: requestBody.quickMoneyMaxPoints
+    });
     if (parsedTopFinalists.error) return res.status(400).json({ error: parsedTopFinalists.error });
     const room = getOrCreateRoom(roomCode);
     const filePath = req.file ? req.file.path : path.join(__dirname, 'data', requestBody.localDataFile || 'sample-game.json');
     const boardData = loadGameData(filePath); initializeBoardState(boardData);
     room.gameState = initializeGame({ playerNames: names, boardData, topFinalists: parsedTopFinalists.value });
+    room.gameState = initializeQuickMoney(room.gameState, parsedTopFinalists.value, parsedQuickMoneyConfig);
     resetJoinIdentity(room, names);
     req.session.activeRoomCode = roomCode;
     persistRoom(room); emitRoomState(room);

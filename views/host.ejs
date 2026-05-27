@@ -30,6 +30,12 @@
           <option value="4">4</option>
           <option value="5">5</option>
         </select>
+        <label>Quick Money prompt count</label>
+        <input name="quickMoneyPromptCount" type="number" min="3" max="10" value="5" required />
+        <label>Quick Money min points</label>
+        <input name="quickMoneyMinPoints" type="number" value="0" required />
+        <label>Quick Money max points</label>
+        <input name="quickMoneyMaxPoints" type="number" value="1000" required />
         <label>Custom game JSON (optional)</label>
         <input type="file" name="boardFile" accept="application/json" />
         <label>Or load from local data/ file (optional)</label>
@@ -52,7 +58,11 @@
           <input name="mogulCategoryIndex" type="number" min="0" max="4" required value="0" />
           <label>Mogul Multiplier Clue Index (0-4)</label>
           <input name="mogulClueIndex" type="number" min="0" max="4" required value="0" />
-          <h4>Quick Money Prompts (5)</h4>
+          <h4>Quick Money Config</h4>
+          <label>Prompt count (3-10)</label><input name="definitionPromptCount" type="number" min="3" max="10" value="5" required />
+          <label>Minimum points</label><input name="definitionMinPoints" type="number" value="0" required />
+          <label>Maximum points</label><input name="definitionMaxPoints" type="number" value="1000" required />
+          <h4>Quick Money Prompts</h4>
           <div id="quickMoneyEditor"></div>
           <button type="submit">Save Definition</button>
           <button type="button" id="loadDefinitionBtn">Load Definition</button>

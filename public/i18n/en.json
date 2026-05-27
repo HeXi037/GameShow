@@ -1,0 +1,11 @@
+{
+  "common": {"none": "None", "connected": "Connected", "disconnected": "Disconnected", "unknown": "Unknown"},
+  "player": {
+    "authenticating": "Authenticating...", "selectedPlayerFallback": "—", "phasePrefix": "Phase", "roundPrefix": "Round",
+    "currentCluePrefix": "Current clue", "clueNone": "None", "buzzDisabled": "Buzzing is disabled until a clue is revealed.",
+    "buzzWaiting": "Waiting for host to open buzzing.", "buzzEnabled": "Buzzing is enabled for this clue.",
+    "answerEnterFirst": "Enter an answer first.", "answerRejected": "Answer rejected."
+  },
+  "viewer": {"phasePrefix": "Phase", "roundPrefix": "Round", "waitingForHost": "Waiting for host to start the game.", "answerHeading": "Answer"},
+  "host": {"noGameLoaded": "No game loaded.", "noClueRevealed": "No clue currently revealed.", "noJoinCodes": "No join codes generated yet.", "playerHeader": "Player", "scoreHeader": "Score"}
+}

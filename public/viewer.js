@@ -1,3 +1,25 @@
+const DEFAULT_LOCALE = 'en';
+const requestedLocale = (document.documentElement.lang || navigator.language || DEFAULT_LOCALE).split('-')[0].toLowerCase();
+let i18n = {};
+function t(key, fallback = key) {
+  return key.split('.').reduce((acc, part) => (acc && acc[part] !== undefined ? acc[part] : null), i18n) ?? fallback;
+}
+async function loadTranslations(scope) {
+  const files = requestedLocale === DEFAULT_LOCALE ? [DEFAULT_LOCALE] : [requestedLocale, DEFAULT_LOCALE];
+  for (const locale of files) {
+    try {
+      const res = await fetch(`/i18n/${locale}.json`);
+      if (!res.ok) continue;
+      const payload = await res.json();
+      i18n = { ...payload };
+      if (payload[scope]) break;
+    } catch (_) {}
+  }
+  document.querySelectorAll('[data-i18n]').forEach((el) => {
+    const text = t(el.dataset.i18n, el.textContent);
+    el.textContent = text;
+  });
+}
 const socket = io({ query: { role: 'viewer' } });
 
 function createSoundboard() {
@@ -33,8 +55,8 @@ function renderScoreboard(players) {
 function renderBoard(state) {
   const boardEl = document.getElementById('board');
   const phaseBanner = document.getElementById('phaseBanner');
-  phaseBanner.textContent = `Phase: ${state.phase} | Round ${state.round}`;
-  if (!state.board) { boardEl.innerHTML = '<p>Waiting for host to start the game.</p>'; return; }
+  phaseBanner.textContent = `${t('viewer.phasePrefix','Phase')}: ${state.phase} | ${t('viewer.roundPrefix','Round')} ${state.round}`;
+  if (!state.board) { boardEl.innerHTML = `<p>${t('viewer.waitingForHost','Waiting for host to start the game.')}</p>`; return; }
 
   const categories = state.board.categories;
   const catHtml = categories.map((c) => `<div class="category">${c.name}</div>`).join('');
@@ -53,7 +75,7 @@ function renderBoard(state) {
     return;
   }
   const mediaHtml = renderClueMedia(state.revealedClue.media);
-  revealed.innerHTML = `<h3>Answer</h3><p>${state.revealedClue.answer}</p>${mediaHtml}`;
+  revealed.innerHTML = `<h3>${t('viewer.answerHeading','Answer')}</h3><p>${state.revealedClue.answer}</p>${mediaHtml}`;
   bindMediaErrorHandlers(revealed);
 }
 function renderClueMedia(media) {
@@ -114,3 +136,5 @@ socket.on('state:update', (state) => {
   renderBoard(state);
   renderQuickMoneyPhase(state);
 });
+
+loadTranslations('viewer');

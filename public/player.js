@@ -1,3 +1,25 @@
+const DEFAULT_LOCALE = 'en';
+const requestedLocale = (document.documentElement.lang || navigator.language || DEFAULT_LOCALE).split('-')[0].toLowerCase();
+let i18n = {};
+function t(key, fallback = key) {
+  return key.split('.').reduce((acc, part) => (acc && acc[part] !== undefined ? acc[part] : null), i18n) ?? fallback;
+}
+async function loadTranslations(scope) {
+  const files = requestedLocale === DEFAULT_LOCALE ? [DEFAULT_LOCALE] : [requestedLocale, DEFAULT_LOCALE];
+  for (const locale of files) {
+    try {
+      const res = await fetch(`/i18n/${locale}.json`);
+      if (!res.ok) continue;
+      const payload = await res.json();
+      i18n = { ...payload };
+      if (payload[scope]) break;
+    } catch (_) {}
+  }
+  document.querySelectorAll('[data-i18n]').forEach((el) => {
+    const text = t(el.dataset.i18n, el.textContent);
+    el.textContent = text;
+  });
+}
 let socket = null;
 let currentState = null;
 let playerStatusMessage = '';
@@ -59,24 +81,24 @@ function renderState(state) {
   const joinCode = (joinCodeInput.value || '').trim().toUpperCase();
   if (joinCode && state.joinCodes) {
     const matchedEntry = Object.entries(state.joinCodes).find(([, value]) => value.code === joinCode);
-    selectedPlayer.textContent = matchedEntry ? matchedEntry[0] : '—';
+    selectedPlayer.textContent = matchedEntry ? matchedEntry[0] : t('player.selectedPlayerFallback', '—');
   }
-  playerPhase.textContent = `Phase: ${state.phase} | Round ${state.round}`;
+  playerPhase.textContent = `${t('player.phasePrefix','Phase')}: ${state.phase} | ${t('player.roundPrefix','Round')} ${state.round}`;
   playerClue.textContent = state.revealedClue
-    ? `Current clue: ${state.revealedClue.answer}`
-    : 'Current clue: None';
+    ? `${t('player.currentCluePrefix','Current clue')}: ${state.revealedClue.answer}`
+    : `${t('player.currentCluePrefix','Current clue')}: ${t('player.clueNone','None')}`;
 
   const buzz = state.buzz || { open: false, lockedBy: null };
   const canBuzz = Boolean(state.revealedClue) && state.phase !== 'quickMoney' && buzz.open && !buzz.lockedBy;
   buzzButton.disabled = !canBuzz;
   if (!state.revealedClue || state.phase === 'quickMoney') {
-    buzzInfo.textContent = 'Buzzing is disabled until a clue is revealed.';
+    buzzInfo.textContent = t('player.buzzDisabled', 'Buzzing is disabled until a clue is revealed.');
   } else if (buzz.lockedBy) {
     buzzInfo.textContent = `Buzz locked by ${buzz.lockedBy}.`;
   } else if (!buzz.open) {
-    buzzInfo.textContent = 'Waiting for host to open buzzing.';
+    buzzInfo.textContent = t('player.buzzWaiting', 'Waiting for host to open buzzing.');
   } else {
-    buzzInfo.textContent = 'Buzzing is enabled for this clue.';
+    buzzInfo.textContent = t('player.buzzEnabled', 'Buzzing is enabled for this clue.');
   }
   if (playerStatusMessage) {
     buzzInfo.textContent = `${buzzInfo.textContent} ${playerStatusMessage}`;
@@ -161,3 +183,11 @@ submitAnswerButton.addEventListener('click', () => {
   if (!answer) { answerInfo.textContent = 'Enter an answer first.'; return; }
   socket.emit('player:answer', { roomCode: (roomCodeInput.value || '').trim().toUpperCase(), playerName: selectedPlayer.textContent, answer, submittedAt: Date.now() });
 });
+
+window.addEventListener('keydown', (event) => {
+  const active = document.activeElement;
+  const typing = active && ['INPUT','TEXTAREA','SELECT'].includes(active.tagName);
+  if (typing || event.defaultPrevented || event.repeat || event.code !== 'Space') return;
+  if (!buzzButton.disabled) { event.preventDefault(); buzzButton.click(); }
+});
+loadTranslations('player');

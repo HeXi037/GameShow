@@ -25,6 +25,10 @@ const playerPhase = document.getElementById('playerPhase');
 const playerClue = document.getElementById('playerClue');
 const buzzButton = document.getElementById('buzzButton');
 const buzzInfo = document.getElementById('buzzInfo');
+const answerPanel = document.getElementById('answerPanel');
+const answerInput = document.getElementById('answerInput');
+const submitAnswerButton = document.getElementById('submitAnswerButton');
+const answerInfo = document.getElementById('answerInfo');
 
 async function fetchState() {
   const roomCode = (roomCodeInput.value || '').trim().toUpperCase();
@@ -77,6 +81,19 @@ function renderState(state) {
   if (playerStatusMessage) {
     buzzInfo.textContent = `${buzzInfo.textContent} ${playerStatusMessage}`;
   }
+  const playerName = selectedPlayer.textContent && selectedPlayer.textContent !== '—' ? selectedPlayer.textContent : null;
+  const isLockWinner = Boolean(playerName && state.buzz?.lockedBy === playerName);
+  const submitted = Boolean(playerName && state.answerCapture?.byPlayer?.[playerName]);
+  answerPanel.hidden = !isLockWinner;
+  submitAnswerButton.disabled = !isLockWinner || submitted;
+  answerInput.disabled = submitted;
+  if (!isLockWinner) {
+    answerInfo.textContent = 'Answer entry appears when your buzz is locked.';
+  } else if (submitted) {
+    answerInfo.textContent = 'Answer submitted. Wait for host adjudication.';
+  } else {
+    answerInfo.textContent = 'You can submit once per buzz lock.';
+  }
 }
 
 function connectAsPlayer() {
@@ -101,6 +118,8 @@ function connectAsPlayer() {
     setConnectionStatus(`Disconnected: session taken over for ${playerName}`, false);
   });
   socket.on('state:update', (state) => renderState(state));
+  socket.on('player:answer:accepted', () => { if (currentState) renderState(currentState); });
+  socket.on('player:answer:rejected', ({ reason }) => { answerInfo.textContent = reason || 'Answer rejected.'; });
   socket.on('player:status', ({ kind, playerName, holdMs }) => {
     if (kind === 'locked-winner-disconnected') {
       const holdSeconds = Math.floor(Number(holdMs || 0) / 1000);
@@ -135,4 +154,10 @@ fetchState().then((state) => {
   if (initialCode) connectAsPlayer();
 }).catch(() => {
   setConnectionStatus('Unable to load state', false);
+});
+submitAnswerButton.addEventListener('click', () => {
+  if (!socket || !socket.connected || submitAnswerButton.disabled) return;
+  const answer = String(answerInput.value || '').trim();
+  if (!answer) { answerInfo.textContent = 'Enter an answer first.'; return; }
+  socket.emit('player:answer', { roomCode: (roomCodeInput.value || '').trim().toUpperCase(), playerName: selectedPlayer.textContent, answer, submittedAt: Date.now() });
 });

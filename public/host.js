@@ -375,6 +375,16 @@ const refreshButton = document.getElementById('refreshSessions');
 if (refreshButton) refreshButton.addEventListener('click', refreshSessions);
 refreshSessions();
 
+const roomSetupForm = document.getElementById('roomSetupForm');
+if (roomSetupForm) {
+  roomSetupForm.addEventListener('submit', (event) => {
+    const formData = new FormData(roomSetupForm);
+    const parsed = Number(formData.get('topFinalists'));
+    const topFinalists = Number.isInteger(parsed) && parsed >= 2 && parsed <= 5 ? parsed : 2;
+    formData.set('topFinalists', String(topFinalists));
+  });
+}
+
 function createDefaultDefinitionState() {
   const mkClues = (base) => Array.from({ length: 5 }, (_, i) => ({ value: base * (i + 1), answer: '', question: '' }));
   const mkRound = (base) => ({ categories: Array.from({ length: 5 }, (_, i) => ({ name: `Category ${i + 1}`, clues: mkClues(base) })) });

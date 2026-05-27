@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 process.env.NODE_ENV = 'development';
 const { server, __testHooks } = require('../server');
+const { saveSession } = require('../src/sessionStore');
 
 let baseUrl;
 let cookie;
@@ -23,6 +24,18 @@ test.after(async () => {
   await new Promise((resolve) => server.close(resolve));
 });
 
+
+async function hostSetup(fields) {
+  const body = new URLSearchParams();
+  Object.entries(fields).forEach(([key, value]) => body.set(key, String(value)));
+  return fetch(`${baseUrl}/host/setup`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Cookie: cookie },
+    body: body.toString(),
+    redirect: 'manual'
+  });
+}
+
 async function hostPost(path, payload) {
   return fetch(`${baseUrl}${path}`, {
     method: 'POST',
@@ -31,14 +44,31 @@ async function hostPost(path, payload) {
   });
 }
 
-test('resume existing session route restores room state', async () => {
-  await hostPost('/host/setup', { roomCode: 'ROOMX', playerNames: 'A,B', localDataFile: 'sample-game.json' });
+test('resume existing session route restores persisted topFinalists state', async () => {
+  saveSession('ROOMX', {
+    roomCode: 'ROOMX',
+    quickMoney: { topFinalists: 4 },
+    config: { reopenOnIncorrect: true }
+  });
+
   const archiveRes = await hostPost('/host/archive', { roomCode: 'ROOMX' });
   assert.equal(archiveRes.status, 200);
 
   const resumeRes = await hostPost('/host/resume', { roomCode: 'ROOMX' });
   assert.equal(resumeRes.status, 200);
   const room = __testHooks.getOrCreateRoom('ROOMX');
-  assert.equal(room.gameState.quickMoney.topFinalists, 2);
+  assert.equal(room.gameState.quickMoney.topFinalists, 4);
   assert.ok(room.gameState.config);
+});
+
+
+test('setup route validates topFinalists bounds', async () => {
+  const tooLow = await hostSetup({ roomCode: 'LOW1', playerNames: 'A,B', localDataFile: 'sample-game.json', topFinalists: 1 });
+  assert.equal(tooLow.status, 400);
+
+  const tooHigh = await hostSetup({ roomCode: 'HIGH1', playerNames: 'A,B', localDataFile: 'sample-game.json', topFinalists: 6 });
+  assert.equal(tooHigh.status, 400);
+
+  const nonInteger = await hostSetup({ roomCode: 'BAD1', playerNames: 'A,B', localDataFile: 'sample-game.json', topFinalists: 'abc' });
+  assert.equal(nonInteger.status, 400);
 });

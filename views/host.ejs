@@ -19,10 +19,17 @@
         <p>Player sessions: <strong id="playerSessions">None</strong></p>
         <ul id="connectionNotices"></ul>
       </div>
-      <form method="post" action="/host/setup" enctype="multipart/form-data" class="card">
+      <form id="roomSetupForm" method="post" action="/host/setup" enctype="multipart/form-data" class="card">
         <label>Player names (comma separated)</label>
         <input name="roomCode" placeholder="ROOM1" required />
         <input name="playerNames" placeholder="Ludwig, QT, Slime, Atrioc" required />
+        <label>Top finalists for Quick Money</label>
+        <select name="topFinalists" id="topFinalists" required>
+          <option value="2" selected>2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+          <option value="5">5</option>
+        </select>
         <label>Custom game JSON (optional)</label>
         <input type="file" name="boardFile" accept="application/json" />
         <label>Or load from local data/ file (optional)</label>

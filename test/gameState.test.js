@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { initializeGame, selectClue, scoreClue, applyMultiplier, advanceQuickMoney, openBuzz, resetBuzz, lockBuzz, applyScoreAndBuzzRules, updateConfig, getRoundBoard, startQuickMoneyTurn } = require('../src/gameState');
 
-function makeBoard() {
+function makeBoard(promptCount = 5, minPoints = 0, maxPoints = 1000) {
   const makeRound = (values) => ({
     categories: Array.from({ length: 5 }, (_, c) => ({
       name: `C${c}`,
@@ -12,7 +12,8 @@ function makeBoard() {
   return {
     round1: makeRound([100, 200, 300, 400, 500]),
     round2: { ...makeRound([200, 400, 600, 800, 1000]), mogulMultiplier: { categoryIndex: 1, clueIndex: 2 } },
-    quickMoneyPrompts: ['p1', 'p2', 'p3', 'p4', 'p5']
+    quickMoney: { promptCount, minPoints, maxPoints },
+    quickMoneyPrompts: Array.from({ length: promptCount }, (_, i) => `p${i + 1}`)
   };
 }
 
@@ -279,4 +280,32 @@ test('tie detection emits guidance for configured modes', () => {
   assert.equal(state.tieGuidance.hasTie, true);
   assert.equal(state.tieGuidance.mode, 'suddenDeath');
   assert.match(state.tieGuidance.message, /sudden-death/i);
+});
+
+
+test('Quick Money supports promptCount boundaries 3 and 10', () => {
+  let state = initializeGame({ playerNames: ['A'], boardData: makeBoard(3) });
+  state.phase = 'quickMoney';
+  state.quickMoney = { ...state.quickMoney, finalists: ['A'], turnActive: true, active: true, completed: false, promptCount: 3, minPoints: 0, maxPoints: 10, answers: {} };
+  for (let i = 0; i < 3; i++) state = advanceQuickMoney(state, { playerName: 'A', promptIndex: i, answer: 'x', points: 1 }).state;
+  assert.equal(state.quickMoney.completed, true);
+
+  state = initializeGame({ playerNames: ['A'], boardData: makeBoard(10) });
+  state.phase = 'quickMoney';
+  state.quickMoney = { ...state.quickMoney, finalists: ['A'], turnActive: true, active: true, completed: false, promptCount: 10, minPoints: 0, maxPoints: 10, answers: {} };
+  for (let i = 0; i < 9; i++) {
+    state = advanceQuickMoney(state, { playerName: 'A', promptIndex: i, answer: 'x', points: 1 }).state;
+    assert.equal(state.quickMoney.completed, false);
+  }
+  state = advanceQuickMoney(state, { playerName: 'A', promptIndex: 9, answer: 'x', points: 1 }).state;
+  assert.equal(state.quickMoney.completed, true);
+});
+
+test('advanceQuickMoney enforces configured min/max points range', () => {
+  let state = initializeGame({ playerNames: ['A'], boardData: makeBoard(5, 10, 25) });
+  state.phase = 'quickMoney';
+  state.quickMoney = { ...state.quickMoney, finalists: ['A'], turnActive: true, active: true, completed: false, promptCount: 5, minPoints: 10, maxPoints: 25, answers: {} };
+  assert.equal(advanceQuickMoney(state, { playerName: 'A', promptIndex: 0, answer: 'ok', points: 9 }).error, 'Points must be between 10 and 25.');
+  assert.equal(advanceQuickMoney(state, { playerName: 'A', promptIndex: 0, answer: 'ok', points: 26 }).error, 'Points must be between 10 and 25.');
+  assert.equal(advanceQuickMoney(state, { playerName: 'A', promptIndex: 0, answer: 'ok', points: 10 }).error, undefined);
 });

@@ -26,7 +26,10 @@ function initializeGame({ playerNames, boardData, topFinalists = 2 }) {
       timerEndsAt: null,
       active: false,
       completed: false,
-      topFinalists
+      topFinalists,
+      promptCount: QUICK_MONEY_DEFAULT_PROMPT_COUNT,
+      minPoints: QUICK_MONEY_DEFAULT_POINTS_MIN,
+      maxPoints: QUICK_MONEY_DEFAULT_POINTS_MAX
     }
   };
 }
@@ -114,8 +117,30 @@ function sortPlayers(players) {
   return [...players].sort((a, b) => b.score - a.score);
 }
 
-const QUICK_MONEY_POINTS_MIN = 0;
-const QUICK_MONEY_POINTS_MAX = 1000;
+const QUICK_MONEY_DEFAULT_PROMPT_COUNT = 5;
+const QUICK_MONEY_MIN_PROMPT_COUNT = 3;
+const QUICK_MONEY_MAX_PROMPT_COUNT = 10;
+const QUICK_MONEY_DEFAULT_POINTS_MIN = 0;
+const QUICK_MONEY_DEFAULT_POINTS_MAX = 1000;
+
+
+function normalizeQuickMoneyConfig(quickMoney = {}, override = {}) {
+  const rawPromptCount = override.promptCount ?? quickMoney.promptCount ?? QUICK_MONEY_DEFAULT_PROMPT_COUNT;
+  const parsedPromptCount = Number(rawPromptCount);
+  const promptCount = Number.isInteger(parsedPromptCount)
+    && parsedPromptCount >= QUICK_MONEY_MIN_PROMPT_COUNT
+    && parsedPromptCount <= QUICK_MONEY_MAX_PROMPT_COUNT
+    ? parsedPromptCount
+    : QUICK_MONEY_DEFAULT_PROMPT_COUNT;
+
+  const rawMin = Number(override.minPoints ?? quickMoney.minPoints ?? QUICK_MONEY_DEFAULT_POINTS_MIN);
+  const rawMax = Number(override.maxPoints ?? quickMoney.maxPoints ?? QUICK_MONEY_DEFAULT_POINTS_MAX);
+  const minPoints = Number.isInteger(rawMin) ? rawMin : QUICK_MONEY_DEFAULT_POINTS_MIN;
+  let maxPoints = Number.isInteger(rawMax) ? rawMax : QUICK_MONEY_DEFAULT_POINTS_MAX;
+  if (maxPoints <= minPoints) maxPoints = minPoints + 1;
+
+  return { promptCount, minPoints, maxPoints };
+}
 
 function allCluesUsed(state, round = state.round) {
   const board = round === 1 ? state.boardData.round1 : state.boardData.round2;
@@ -149,8 +174,9 @@ function selectClue(state, categoryIndex, clueIndex) {
   };
 }
 
-function initializeQuickMoney(state, topN = state.quickMoney.topFinalists || 2) {
+function initializeQuickMoney(state, topN = state.quickMoney.topFinalists || 2, override = {}) {
   const finalists = sortPlayers(state.players).slice(0, Number(topN) || 2).map((p) => p.name);
+  const normalized = normalizeQuickMoneyConfig(state.quickMoney, override);
   return {
     ...state,
     quickMoney: {
@@ -162,7 +188,8 @@ function initializeQuickMoney(state, topN = state.quickMoney.topFinalists || 2) 
       answers: {},
       timerEndsAt: null,
       active: finalists.length > 0,
-      completed: finalists.length === 0
+      completed: finalists.length === 0,
+      ...normalized
     }
   };
 }
@@ -240,10 +267,12 @@ function advanceQuickMoney(state, { playerName, promptIndex, answer, points }) {
   if (!Number.isFinite(parsedPoints)) {
     return { state, error: 'Points must be a finite number.' };
   }
-  if (parsedPoints < QUICK_MONEY_POINTS_MIN || parsedPoints > QUICK_MONEY_POINTS_MAX) {
+  const minPoints = Number(state.quickMoney.minPoints);
+  const maxPoints = Number(state.quickMoney.maxPoints);
+  if (parsedPoints < minPoints || parsedPoints > maxPoints) {
     return {
       state,
-      error: `Points must be between ${QUICK_MONEY_POINTS_MIN} and ${QUICK_MONEY_POINTS_MAX}.`
+      error: `Points must be between ${minPoints} and ${maxPoints}.`
     };
   }
 
@@ -261,7 +290,8 @@ function advanceQuickMoney(state, { playerName, promptIndex, answer, points }) {
     p.name === playerName ? { ...p, score: p.score + parsedPoints } : p
   ));
 
-  const isLastPrompt = state.quickMoney.promptIndex >= 4;
+  const configuredPromptCount = Number(state.quickMoney.promptCount) || QUICK_MONEY_DEFAULT_PROMPT_COUNT;
+  const isLastPrompt = state.quickMoney.promptIndex >= (configuredPromptCount - 1);
   let quickMoney = { ...state.quickMoney, answers: nextAnswers };
 
   if (isLastPrompt) {

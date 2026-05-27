@@ -405,6 +405,8 @@ if (roomSetupForm) {
     const parsed = Number(formData.get('topFinalists'));
     const topFinalists = Number.isInteger(parsed) && parsed >= 2 && parsed <= 5 ? parsed : 2;
     formData.set('topFinalists', String(topFinalists));
+    const promptCount = Number(formData.get('quickMoneyPromptCount'));
+    formData.set('quickMoneyPromptCount', String(Number.isInteger(promptCount) && promptCount >= 3 && promptCount <= 10 ? promptCount : 5));
   });
 }
 
@@ -416,6 +418,7 @@ function createDefaultDefinitionState() {
     metadata: { name: '' },
     round1: mkRound(100),
     round2: { categories: mkRound(200).categories, mogulMultiplier: { categoryIndex: 0, clueIndex: 0 } },
+    quickMoney: { promptCount: 5, minPoints: 0, maxPoints: 1000 },
     quickMoneyPrompts: Array.from({ length: 5 }, () => '')
   };
 }
@@ -485,6 +488,7 @@ function toServerDefinitionPayload() {
         clueIndex: Number(gameDefinitionState.round2.mogulMultiplier.clueIndex || 0)
       }
     },
+    quickMoney: gameDefinitionState.quickMoney,
     quickMoneyPrompts: gameDefinitionState.quickMoneyPrompts
   };
 }
@@ -579,6 +583,8 @@ function bindGameDefinitionEditor() {
         return;
       }
       gameDefinitionState = { ...createDefaultDefinitionState(), ...payload.data, metadata: { name: payload.name } };
+      const form = document.getElementById('gameDefinitionForm');
+      if (form) { form.definitionPromptCount.value = Number(gameDefinitionState.quickMoney?.promptCount ?? 5); form.definitionMinPoints.value = Number(gameDefinitionState.quickMoney?.minPoints ?? 0); form.definitionMaxPoints.value = Number(gameDefinitionState.quickMoney?.maxPoints ?? 1000); }
       form.mogulCategoryIndex.value = String(payload.data.round2.mogulMultiplier.categoryIndex);
       form.mogulClueIndex.value = String(payload.data.round2.mogulMultiplier.clueIndex);
       renderGameDefinitionEditor();

@@ -103,6 +103,9 @@ app.post('/host/game-definitions', requireHost, (req, res) => {
     const data = req.body?.data;
     validateGameData(data);
     const filePath = resolveDataFileByName(name);
+    if (fs.existsSync(filePath)) {
+      return res.status(409).json({ error: { code: 'CONFLICT', message: 'Game definition already exists.' } });
+    }
     fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
     res.status(201).json({ ok: true, name, file: path.basename(filePath) });
   } catch (error) {

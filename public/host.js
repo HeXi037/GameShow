@@ -178,7 +178,9 @@ function renderReveal() {
   const buzzStatus = buzz.lockedBy ? `Locked by ${buzz.lockedBy}` : buzzState;
   const lockTime = buzz.lockedAt ? new Date(buzz.lockedAt).toLocaleTimeString() : '—';
   const winnerClass = buzz.lockedBy ? 'buzz-winner' : '';
-  const winnerPanel = `<p><b>Buzz Status:</b> ${buzzState}</p><p class="${winnerClass}"><b>Winner:</b> ${buzz.lockedBy || 'None'}</p><p><b>Lock Time:</b> ${lockTime}</p>`;
+  const pendingAnswer = buzz.lockedBy ? state.answerCapture?.byPlayer?.[buzz.lockedBy] : null;
+  const pendingAnswerText = pendingAnswer?.answer || '—';
+  const winnerPanel = `<p><b>Buzz Status:</b> ${buzzState}</p><p class="${winnerClass}"><b>Winner:</b> ${buzz.lockedBy || 'None'}</p><p><b>Lock Time:</b> ${lockTime}</p><p><b>Captured answer:</b> ${pendingAnswerText}</p>`;
   const indicator = isMultiplier ? '<p><strong>⚡ Mogul Multiplier clue is active.</strong></p>' : '';
   const media = state.revealedClue.media;
   const mediaHtml = media ? renderClueMedia(media, 'host') : '';

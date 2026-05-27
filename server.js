@@ -56,9 +56,25 @@ function resetJoinIdentity(room, playerNames) {
   room.joinIdentity = { codesByPlayer: new Map(), playerByCode: new Map(), activeSocketByPlayer: new Map() };
   playerNames.forEach((name, i) => { const code = `P${i + 1}${room.roomCode}`; room.joinIdentity.codesByPlayer.set(name, code); room.joinIdentity.playerByCode.set(code, name); });
 }
-function publicState(room) { return { roomCode: room.roomCode, phase: room.gameState.phase, round: room.gameState.round, players: room.gameState.players, board: room.gameState.boardData ? getRoundBoard(room.gameState) : null, revealedClue: room.gameState.revealedClue, buzz: room.gameState.buzz, config: room.gameState.config, quickMoneyPrompts: room.gameState.boardData?.quickMoneyPrompts || [], quickMoney: room.gameState.quickMoney, joinCodes: {} }; }
+function publicState(room) { return { roomCode: room.roomCode, phase: room.gameState.phase, round: room.gameState.round, players: room.gameState.players, board: room.gameState.boardData ? getRoundBoard(room.gameState) : null, revealedClue: room.gameState.revealedClue, buzz: room.gameState.buzz, config: room.gameState.config, quickMoneyPrompts: room.gameState.boardData?.quickMoneyPrompts || [], quickMoney: room.gameState.quickMoney, answerCapture: room.gameState.answerCapture || { clueKey: null, byPlayer: {} }, joinCodes: {} }; }
 function emitRoomState(room) { io.to(room.roomCode).emit('state:update', publicState(room)); }
 const persistRoom = (room) => saveSession(room.roomCode, room.gameState);
+
+function activeClueKey(state) {
+  const clue = state?.revealedClue;
+  if (!clue) return null;
+  return `r${Number(state.round || 0)}:c${Number(clue.categoryIndex)}:q${Number(clue.clueIndex)}`;
+}
+
+function ensureAnswerCapture(state) {
+  if (!state.answerCapture || typeof state.answerCapture !== 'object') {
+    state.answerCapture = { clueKey: null, byPlayer: {} };
+  }
+  if (!state.archivedAnswers || !Array.isArray(state.archivedAnswers)) {
+    state.archivedAnswers = [];
+  }
+  return state;
+}
 
 function loadGameData(filePath) { return JSON.parse(fs.readFileSync(filePath, 'utf-8')); }
 function initializeBoardState(data) { ['round1', 'round2'].forEach((roundKey) => data[roundKey].categories.forEach((category) => category.clues.forEach((clue) => { clue.used = false; }))); }
@@ -224,6 +240,7 @@ app.post('/host/setup', requireHost, upload.single('boardFile'), (req, res) => {
     const boardData = loadGameData(filePath); initializeBoardState(boardData);
     room.gameState = initializeGame({ playerNames: names, boardData, topFinalists: parsedTopFinalists.value });
     room.gameState = initializeQuickMoney(room.gameState, parsedTopFinalists.value, parsedQuickMoneyConfig);
+    ensureAnswerCapture(room.gameState);
     resetJoinIdentity(room, names);
     req.session.activeRoomCode = roomCode;
     persistRoom(room); emitRoomState(room);
@@ -231,7 +248,7 @@ app.post('/host/setup', requireHost, upload.single('boardFile'), (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
-function hostAction(req, res, action) { try { const room = getHostRoom(req, res); if (!room) return; action(room); persistRoom(room); emitRoomState(room); res.sendStatus(200); } catch (e) { res.status(400).json({ error: { message: e.message } }); } }
+function hostAction(req, res, action) { try { const room = getHostRoom(req, res); if (!room) return; ensureAnswerCapture(room.gameState); action(room); persistRoom(room); emitRoomState(room); res.sendStatus(200); } catch (e) { res.status(400).json({ error: { message: e.message } }); } }
 app.post('/host/select-clue', requireHost, (req, res) => hostAction(req, res, (room) => { const out = selectClue(room.gameState, Number(req.body.categoryIndex), Number(req.body.clueIndex)); if (out.error) throw new Error(out.error); room.gameState = out.state; }));
 app.post('/host/open-buzz', requireHost, (req, res) => hostAction(req, res, (room) => { const out = openBuzz(room.gameState); if (out.error) throw new Error(out.error); room.gameState = out.state; }));
 app.post('/host/reset-buzz', requireHost, (req, res) => hostAction(req, res, (room) => { const out = resetBuzz(room.gameState); if (out.error) throw new Error(out.error); room.gameState = out.state; }));
@@ -242,13 +259,70 @@ app.post('/host/quick-money/start-turn', requireHost, (req, res) => hostAction(r
 app.post('/host/quick-money/submit', requireHost, (req, res) => hostAction(req, res, (room) => { const out = advanceQuickMoney(room.gameState, req.body); if (out.error) throw new Error(out.error); room.gameState = out.state; }));
 
 io.on('connection', (socket) => {
+  const role = String(socket.handshake.query?.role || '').trim();
   const room = getRoom(socket.handshake.query?.roomCode);
   if (!room) return socket.disconnect(true);
+  ensureAnswerCapture(room.gameState);
   socket.join(room.roomCode);
-  socket.on('player:buzz', () => {
-    const result = lockBuzz(room.gameState, socket.handshake.query?.playerName, Date.now());
+
+  let playerName = null;
+  if (role === 'player') {
+    const joinCode = String(socket.handshake.query?.joinCode || '').trim().toUpperCase();
+    playerName = room.joinIdentity?.playerByCode?.get(joinCode) || null;
+    if (!playerName) {
+      socket.emit('auth:rejected', { reason: 'Invalid join code.' });
+      return socket.disconnect(true);
+    }
+    const current = room.joinIdentity.activeSocketByPlayer.get(playerName);
+    if (current && current !== socket.id) {
+      io.to(current).emit('session:taken-over', { playerName });
+      const prev = io.sockets.sockets.get(current);
+      if (prev) prev.disconnect(true);
+    }
+    room.joinIdentity.activeSocketByPlayer.set(playerName, socket.id);
+    socket.data.playerName = playerName;
+  }
+
+  socket.emit('state:update', publicState(room));
+
+  socket.on('disconnect', () => {
+    if (role === 'player' && playerName && room.joinIdentity.activeSocketByPlayer.get(playerName) === socket.id) {
+      room.joinIdentity.activeSocketByPlayer.delete(playerName);
+    }
+  });
+
+  socket.on('player:buzz', ({ at } = {}) => {
+    if (role !== 'player' || !socket.data.playerName) return;
+    const result = lockBuzz(room.gameState, socket.data.playerName, Number(at) || Date.now());
     if (result.error) return;
-    room.gameState = result.state; persistRoom(room); emitRoomState(room);
+    room.gameState = result.state;
+    const key = activeClueKey(room.gameState);
+    if (key && room.gameState.answerCapture.clueKey !== key) {
+      room.gameState.answerCapture = { clueKey: key, byPlayer: {} };
+    }
+    persistRoom(room); emitRoomState(room);
+  });
+
+  socket.on('player:answer', (payload = {}) => {
+    if (role !== 'player' || !socket.data.playerName) return;
+    const clueKey = activeClueKey(room.gameState);
+    if (!clueKey || !room.gameState.buzz?.lockedBy || room.gameState.buzz.lockedBy !== socket.data.playerName) {
+      return socket.emit('player:answer:rejected', { reason: 'Not eligible to submit answer.' });
+    }
+    if (room.gameState.answerCapture.clueKey !== clueKey) {
+      room.gameState.answerCapture = { clueKey, byPlayer: {} };
+    }
+    if (room.gameState.answerCapture.byPlayer[socket.data.playerName]) {
+      return socket.emit('player:answer:rejected', { reason: 'Answer already submitted for this lock.' });
+    }
+    const answer = typeof payload.answer === 'string' ? payload.answer.trim() : '';
+    if (!answer) return socket.emit('player:answer:rejected', { reason: 'Answer is required.' });
+    const submittedAt = Number(payload.submittedAt || Date.now());
+    const record = { roomCode: room.roomCode, playerName: socket.data.playerName, clueKey, answer, submittedAt };
+    room.gameState.answerCapture.byPlayer[socket.data.playerName] = record;
+    room.gameState.archivedAnswers.push(record);
+    persistRoom(room); emitRoomState(room);
+    socket.emit('player:answer:accepted', { clueKey, submittedAt });
   });
 });
 
@@ -257,6 +331,7 @@ for (const sessionMeta of listSessions().filter((s) => !s.archived)) {
   if (saved?.state) {
     const room = getOrCreateRoom(saved.roomCode);
     room.gameState = saved.state;
+    ensureAnswerCapture(room.gameState);
   }
 }
 

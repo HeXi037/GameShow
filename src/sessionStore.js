@@ -118,7 +118,8 @@ function getSessionExportJSON(roomCode) {
     scores: players.map((player) => ({ name: player?.name || '', score: Number(player?.score || 0) })),
     winners,
     cluesAsked,
-    quickMoneyAnswers: state.quickMoney?.answers || {}
+    quickMoneyAnswers: state.quickMoney?.answers || {},
+    submittedAnswers: Array.isArray(state.archivedAnswers) ? state.archivedAnswers : []
   };
 }
 
@@ -133,17 +134,21 @@ function getSessionExportCSV(roomCode) {
   if (!snapshot) return null;
   const rows = [];
   const push = (row) => rows.push(row.map(csvEscape).join(','));
-  push(['section', 'roomCode', 'phase', 'round', 'name', 'score', 'winner', 'roundKey', 'category', 'categoryIndex', 'clueIndex', 'value', 'answer', 'question', 'finalist', 'promptIndex', 'points']);
+  push(['section', 'roomCode', 'phase', 'round', 'name', 'score', 'winner', 'roundKey', 'category', 'categoryIndex', 'clueIndex', 'value', 'answer', 'question', 'finalist', 'promptIndex', 'points', 'playerName', 'clueKey', 'submittedAt']);
   (snapshot.scores || []).forEach((entry) => {
-    push(['score', snapshot.roomCode, snapshot.phase || '', snapshot.round || '', entry.name || '', entry.score || 0, snapshot.winners.includes(entry.name) ? 'yes' : 'no', '', '', '', '', '', '', '', '', '', '']);
+    push(['score', snapshot.roomCode, snapshot.phase || '', snapshot.round || '', entry.name || '', entry.score || 0, snapshot.winners.includes(entry.name) ? 'yes' : 'no', '', '', '', '', '', '', '', '', '', '', '', '', '']);
   });
   (snapshot.cluesAsked || []).forEach((clue) => {
-    push(['clue', snapshot.roomCode, snapshot.phase || '', snapshot.round || '', '', '', '', clue.round || '', clue.category || '', clue.categoryIndex, clue.clueIndex, clue.value || '', clue.answer || '', clue.question || '', '', '', '']);
+    push(['clue', snapshot.roomCode, snapshot.phase || '', snapshot.round || '', '', '', '', clue.round || '', clue.category || '', clue.categoryIndex, clue.clueIndex, clue.value || '', clue.answer || '', clue.question || '', '', '', '', '', '', '']);
   });
   Object.entries(snapshot.quickMoneyAnswers || {}).forEach(([finalist, answers]) => {
     (Array.isArray(answers) ? answers : []).forEach((entry) => {
-      push(['quickMoney', snapshot.roomCode, snapshot.phase || '', snapshot.round || '', '', '', '', '', '', '', '', '', '', '', finalist, Number(entry?.promptIndex || 0), Number(entry?.points || 0)]);
+      push(['quickMoney', snapshot.roomCode, snapshot.phase || '', snapshot.round || '', '', '', '', '', '', '', '', '', '', '', finalist, Number(entry?.promptIndex || 0), Number(entry?.points || 0), '', '', '']);
     });
+  });
+
+  (snapshot.submittedAnswers || []).forEach((entry) => {
+    push(['submittedAnswer', snapshot.roomCode, snapshot.phase || '', snapshot.round || '', '', '', '', '', '', '', '', '', '', '', '', '', '', entry.playerName || '', entry.clueKey || '', Number(entry.submittedAt || 0)]);
   });
   return rows.join('\n');
 }

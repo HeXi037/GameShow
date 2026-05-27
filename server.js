@@ -19,6 +19,25 @@ const isDevelopment = process.env.NODE_ENV === 'development';
 const HOST_PASSWORD = process.env.HOST_PASSWORD || (isDevelopment ? 'mogulhost' : null);
 if (!HOST_PASSWORD) throw new Error('HOST_PASSWORD environment variable is required when NODE_ENV is not development.');
 const upload = multer({ dest: path.join(__dirname, 'uploads') });
+const mediaDir = path.join(__dirname, 'public', 'media');
+fs.mkdirSync(mediaDir, { recursive: true });
+const MEDIA_MAX_BYTES = 10 * 1024 * 1024;
+const mediaUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, mediaDir),
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname || '').toLowerCase().replace(/[^.a-z0-9]/g, '');
+      const base = path.basename(file.originalname || 'upload', ext).toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'upload';
+      cb(null, `${Date.now()}-${base}${ext || ''}`);
+    }
+  }),
+  limits: { fileSize: MEDIA_MAX_BYTES, files: 1 },
+  fileFilter: (req, file, cb) => {
+    const allowed = /^image\/|^audio\/|^video\//.test(file.mimetype || '');
+    if (!allowed) return cb(new Error('Unsupported media type. Allowed: image/audio/video.'));
+    cb(null, true);
+  }
+});
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
@@ -63,6 +82,15 @@ function parseQuickMoneyConfig(rawConfig = {}) {
 }
 
 function validateGameData(data) {
+  const ensureMedia = (clue, pathPrefix) => {
+    if (!Object.hasOwn(clue, 'media') || clue.media == null) return;
+    if (typeof clue.media !== 'object' || Array.isArray(clue.media)) throw new Error(`${pathPrefix}.media must be an object when provided.`);
+    const { type, url, altText, caption } = clue.media;
+    if (!['image', 'audio', 'video'].includes(type)) throw new Error(`${pathPrefix}.media.type must be one of image, audio, or video.`);
+    if (typeof url !== 'string' || !url.trim()) throw new Error(`${pathPrefix}.media.url is required.`);
+    if (altText != null && (typeof altText !== 'string' || !altText.trim())) throw new Error(`${pathPrefix}.media.altText must be a non-empty string when provided.`);
+    if (caption != null && (typeof caption !== 'string' || !caption.trim())) throw new Error(`${pathPrefix}.media.caption must be a non-empty string when provided.`);
+  };
   const ensureRound = (roundName) => {
     const round = data?.[roundName];
     if (!round || !Array.isArray(round.categories) || round.categories.length !== 5) throw new Error(`${roundName} must include exactly 5 categories.`);
@@ -70,6 +98,7 @@ function validateGameData(data) {
       if (!category || typeof category.name !== 'string' || !category.name.trim()) throw new Error(`${roundName}.categories[${categoryIndex}].name is required.`);
       if (!Array.isArray(category.clues) || category.clues.length !== 5) throw new Error(`${roundName}.categories[${categoryIndex}] must include exactly 5 clues.`);
       category.clues.forEach((clue, clueIndex) => {
+        ensureMedia(clue, `${roundName}.categories[${categoryIndex}].clues[${clueIndex}]`);
         if (!Number.isFinite(Number(clue?.value))) throw new Error(`${roundName}.categories[${categoryIndex}].clues[${clueIndex}].value must be numeric.`);
         if (typeof clue?.answer !== 'string' || !clue.answer.trim()) throw new Error(`${roundName}.categories[${categoryIndex}].clues[${clueIndex}].answer is required.`);
         if (typeof clue?.question !== 'string' || !clue.question.trim()) throw new Error(`${roundName}.categories[${categoryIndex}].clues[${clueIndex}].question is required.`);
@@ -149,6 +178,21 @@ app.post('/host/game-definitions', requireHost, (req, res) => {
   } catch (error) {
     res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: error.message } });
   }
+});
+
+app.post('/host/upload-media', requireHost, (req, res) => {
+  mediaUpload.single('media')(req, res, (error) => {
+    if (error) {
+      if (error.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: `File too large. Maximum ${MEDIA_MAX_BYTES} bytes.` } });
+      return res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: error.message } });
+    }
+    if (!req.file) return res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'No media file uploaded.' } });
+    const url = `/media/${req.file.filename}`;
+    let type = 'image';
+    if (req.file.mimetype.startsWith('audio/')) type = 'audio';
+    if (req.file.mimetype.startsWith('video/')) type = 'video';
+    return res.status(201).json({ ok: true, media: { type, url } });
+  });
 });
 
 app.get('/host/game-definitions/:name', requireHost, (req, res) => {

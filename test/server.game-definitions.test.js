@@ -100,3 +100,29 @@ test('rejects bad names and path traversal', async () => {
   const encodedTraversalRes = await hostRequest('/host/game-definitions/%2e%2e%2fsample-game');
   assert.equal(encodedTraversalRes.status, 400);
 });
+
+test('accepts valid clue media and rejects malformed media schema', async () => {
+  const withMedia = sampleData();
+  withMedia.round1.categories[0].clues[0].media = {
+    type: 'image',
+    url: '/media/example.png',
+    altText: 'Example alt',
+    caption: 'Example caption'
+  };
+  const okRes = await hostRequest('/host/game-definitions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'test-media-valid', data: withMedia })
+  });
+  assert.equal(okRes.status, 201);
+  createdFiles.push('test-media-valid.json');
+
+  const bad = sampleData();
+  bad.round1.categories[0].clues[0].media = { type: 'gif', url: '' };
+  const badRes = await hostRequest('/host/game-definitions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'test-media-invalid', data: bad })
+  });
+  assert.equal(badRes.status, 400);
+});

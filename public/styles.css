@@ -17,3 +17,12 @@ input, select, button { width: 100%; margin: 4px 0; padding: 8px; }
 @keyframes tileReveal { from { transform: scale(0.95); opacity: 0.65; } to { transform: scale(1); opacity: 1; } }
 @keyframes buzzWinnerPulse { 0%,100% { box-shadow: 0 0 0 rgba(125,255,158,0); } 50% { box-shadow: 0 0 0 8px rgba(125,255,158,0.25); } }
 @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } .board { overflow-x:auto; } }
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+a:focus-visible {
+  outline: 3px solid #ffcf54;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 3px rgba(6, 48, 143, 0.65);
+}

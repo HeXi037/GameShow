@@ -1,5 +1,5 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -138,7 +138,7 @@
       </div>
 <div class="card">
         <h3>Revealed Answer, Buzz Controls, Captured Response, and Scoring</h3>
-        <div id="hostReveal"></div>
+        <div id="hostReveal" aria-live="polite"></div>
       </div>
 
       <div class="card" id="multiplierCard" hidden>
@@ -153,8 +153,8 @@
 
       <div class="card">
         <h3>Quick Money Controls</h3>
-        <div id="quickMoneyStatus"></div>
-        <form id="quickTimer"><input type="number" name="seconds" value="20" /><button type="submit">Start Timer</button></form>
+        <div id="quickMoneyStatus" aria-live="polite"></div>
+        <form id="quickTimer"><input type="number" name="seconds" value="20" aria-label="Timer seconds" tabindex="30" /><button type="submit" tabindex="31">Start Timer</button></form>
         <form id="quickSubmit">
           <input name="playerName" placeholder="Finalist" required />
           <input name="promptIndex" type="number" min="0" max="4" required />

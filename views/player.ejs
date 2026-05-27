@@ -1,5 +1,5 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -13,8 +13,8 @@
       <div class="card">
         <h3>Join Game</h3>
         <label for="joinCode">Join Code</label>
-        <input id="joinCode" placeholder="Enter your code" autocomplete="one-time-code" />
-        <button id="connectButton" type="button">Connect as Player</button>
+        <input id="joinCode" tabindex="2" placeholder="Enter your code" autocomplete="one-time-code" />
+        <button id="connectButton" type="button" tabindex="3">Connect as Player</button>
       </div>
 
       <div class="card">
@@ -30,17 +30,17 @@
       </div>
 
 
-      <div class="card" id="answerPanel" hidden>
-        <h3>Submit Answer</h3>
+      <div class="card" id="answerPanel" hidden role="dialog" aria-modal="false" aria-labelledby="answerPanelHeading">
+        <h3 id="answerPanelHeading">Submit Answer</h3>
         <label for="answerInput">Your response</label>
-        <input id="answerInput" placeholder="Type your answer" />
-        <button id="submitAnswerButton" type="button">Submit Answer</button>
+        <input id="answerInput" placeholder="Type your answer" tabindex="6" />
+        <button id="submitAnswerButton" type="button" tabindex="7">Submit Answer</button>
         <p id="answerInfo">You can submit once per buzz lock.</p>
       </div>
 
       <div class="card">
         <h3>Buzz In</h3>
-        <button id="buzzButton" type="button" disabled>Buzz</button>
+        <button id="buzzButton" type="button" disabled aria-label="Buzz in" data-i18n="player.buzzButton" tabindex="5">Buzz</button>
         <p id="buzzInfo">Buzzing is disabled until a clue is revealed.</p>
       </div>
     </section>

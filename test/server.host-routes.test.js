@@ -130,3 +130,17 @@ test('upload media route validates auth, type, and size', async () => {
   const bigRes = await fetch(`${baseUrl}/host/upload-media`, { method: 'POST', headers: { Cookie: cookie }, body: bigForm });
   assert.equal(bigRes.status, 400);
 });
+
+
+test('route views include required accessibility roles and labels', async () => {
+  const playerRes = await fetch(`${baseUrl}/join?room=ROOM1&code=ABC123`);
+  assert.equal(playerRes.status, 200);
+  const playerHtml = await playerRes.text();
+  assert.match(playerHtml, /aria-label=["']Buzz in["']/);
+
+  const hostRes = await fetch(`${baseUrl}/host`, { headers: { Cookie: cookie } });
+  assert.equal(hostRes.status, 200);
+  const hostHtml = await hostRes.text();
+  assert.match(hostHtml, /id="hostReveal" aria-live="polite"/);
+  assert.match(hostHtml, /id="quickMoneyStatus" aria-live="polite"/);
+});

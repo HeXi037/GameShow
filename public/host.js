@@ -1,3 +1,25 @@
+const DEFAULT_LOCALE = 'en';
+const requestedLocale = (document.documentElement.lang || navigator.language || DEFAULT_LOCALE).split('-')[0].toLowerCase();
+let i18n = {};
+function t(key, fallback = key) {
+  return key.split('.').reduce((acc, part) => (acc && acc[part] !== undefined ? acc[part] : null), i18n) ?? fallback;
+}
+async function loadTranslations(scope) {
+  const files = requestedLocale === DEFAULT_LOCALE ? [DEFAULT_LOCALE] : [requestedLocale, DEFAULT_LOCALE];
+  for (const locale of files) {
+    try {
+      const res = await fetch(`/i18n/${locale}.json`);
+      if (!res.ok) continue;
+      const payload = await res.json();
+      i18n = { ...payload };
+      if (payload[scope]) break;
+    } catch (_) {}
+  }
+  document.querySelectorAll('[data-i18n]').forEach((el) => {
+    const text = t(el.dataset.i18n, el.textContent);
+    el.textContent = text;
+  });
+}
 const stateRoom = (window.__INITIAL_STATE__ && window.__INITIAL_STATE__.roomCode) || '';
 const socket = io({ query: { role: 'host', roomCode: stateRoom } });
 let state = window.__INITIAL_STATE__ || {};
@@ -60,7 +82,7 @@ function renderJoinCodes() {
   const joinCodes = state.joinCodes || {};
   const players = Object.keys(joinCodes);
   if (!players.length) {
-    wrap.innerHTML = '<p>No join codes generated yet.</p>';
+    wrap.innerHTML = `<p>${t('host.noJoinCodes','No join codes generated yet.')}</p>`;
     return;
   }
   const rows = players.map((playerName) => {
@@ -147,7 +169,7 @@ async function post(url, payload) {
 
 function renderHostBoard() {
   const wrap = document.getElementById('hostBoard');
-  if (!state.board) { wrap.innerHTML = 'No game loaded.'; return; }
+  if (!state.board) { wrap.innerHTML = t('host.noGameLoaded','No game loaded.'); return; }
   let html = '<div class="board">';
   html += state.board.categories.map((c) => `<div class="category">${c.name}</div>`).join('');
   for (let r = 0; r < 5; r += 1) {
@@ -167,7 +189,7 @@ function renderReveal() {
   const el = document.getElementById('hostReveal');
   const multiplierCard = document.getElementById('multiplierCard');
   if (!state.revealedClue) {
-    el.innerHTML = 'No clue currently revealed.';
+    el.innerHTML = t('host.noClueRevealed','No clue currently revealed.');
     multiplierCard.hidden = true;
     return;
   }
@@ -656,3 +678,5 @@ if (soundToggle) {
   soundToggle.checked = current;
   soundToggle.addEventListener('change', () => soundboard.setEnabled(soundToggle.checked));
 }
+
+loadTranslations('host');

@@ -1,0 +1,11 @@
+{
+  "common": {"none": "Ninguno", "connected": "Conectado", "disconnected": "Desconectado", "unknown": "Desconocido"},
+  "player": {
+    "authenticating": "Autenticando...", "selectedPlayerFallback": "—", "phasePrefix": "Fase", "roundPrefix": "Ronda",
+    "currentCluePrefix": "Pista actual", "clueNone": "Ninguna", "buzzDisabled": "El buzzer está deshabilitado hasta que se revele una pista.",
+    "buzzWaiting": "Esperando a que el anfitrión abra el buzzer.", "buzzEnabled": "El buzzer está habilitado para esta pista.",
+    "answerEnterFirst": "Primero ingresa una respuesta.", "answerRejected": "Respuesta rechazada."
+  },
+  "viewer": {"phasePrefix": "Fase", "roundPrefix": "Ronda", "waitingForHost": "Esperando a que el anfitrión inicie el juego.", "answerHeading": "Respuesta"},
+  "host": {"noGameLoaded": "No hay juego cargado.", "noClueRevealed": "No hay pista revelada actualmente.", "noJoinCodes": "Aún no se generaron códigos.", "playerHeader": "Jugador", "scoreHeader": "Puntaje"}
+}

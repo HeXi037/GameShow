@@ -108,3 +108,25 @@ test('export route enforces 403 for wrong host context and 404 for missing sessi
   const missingRes = await fetch(`${baseUrl}/host/export/EXR2`, { headers: { Cookie: cookie } });
   assert.equal(missingRes.status, 404);
 });
+
+test('upload media route validates auth, type, and size', async () => {
+  const goodBlob = new Blob([Buffer.from('fakepng')], { type: 'image/png' });
+  const goodForm = new FormData();
+  goodForm.set('media', goodBlob, 'my file.png');
+  const goodRes = await fetch(`${baseUrl}/host/upload-media`, { method: 'POST', headers: { Cookie: cookie }, body: goodForm });
+  assert.equal(goodRes.status, 201);
+  const goodPayload = await goodRes.json();
+  assert.equal(goodPayload.ok, true);
+  assert.match(goodPayload.media.url, /^\/media\//);
+
+  const badTypeForm = new FormData();
+  badTypeForm.set('media', new Blob([Buffer.from('x')], { type: 'text/plain' }), 'bad.txt');
+  const badTypeRes = await fetch(`${baseUrl}/host/upload-media`, { method: 'POST', headers: { Cookie: cookie }, body: badTypeForm });
+  assert.equal(badTypeRes.status, 400);
+
+  const huge = new Uint8Array((10 * 1024 * 1024) + 1);
+  const bigForm = new FormData();
+  bigForm.set('media', new Blob([huge], { type: 'image/jpeg' }), 'big.jpg');
+  const bigRes = await fetch(`${baseUrl}/host/upload-media`, { method: 'POST', headers: { Cookie: cookie }, body: bigForm });
+  assert.equal(bigRes.status, 400);
+});

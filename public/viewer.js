@@ -48,7 +48,30 @@ function renderBoard(state) {
 
   boardEl.innerHTML = catHtml + tiles;
   const revealed = document.getElementById('revealed');
-  revealed.innerHTML = state.revealedClue ? `<h3>Answer</h3><p>${state.revealedClue.answer}</p>` : '';
+  if (!state.revealedClue) {
+    revealed.innerHTML = '';
+    return;
+  }
+  const mediaHtml = renderClueMedia(state.revealedClue.media);
+  revealed.innerHTML = `<h3>Answer</h3><p>${state.revealedClue.answer}</p>${mediaHtml}`;
+  bindMediaErrorHandlers(revealed);
+}
+function renderClueMedia(media) {
+  if (!media) return '';
+  const caption = media.caption ? `<figcaption>${media.caption}</figcaption>` : '';
+  const error = '<div class="media-error" hidden>⚠️ Media failed to load. Showing text clue only.</div>';
+  if (media.type === 'image') return `<figure class="clue-media"><img data-clue-media src="${media.url}" alt="${media.altText || 'Clue media'}" />${error}${caption}</figure>`;
+  if (media.type === 'audio') return `<figure class="clue-media"><audio data-clue-media controls src="${media.url}"></audio>${error}${caption}</figure>`;
+  if (media.type === 'video') return `<figure class="clue-media"><video data-clue-media controls src="${media.url}"></video>${error}${caption}</figure>`;
+  return '';
+}
+function bindMediaErrorHandlers(root) {
+  root.querySelectorAll('[data-clue-media]').forEach((node) => {
+    node.addEventListener('error', () => {
+      const errorEl = node.parentElement?.querySelector('.media-error');
+      if (errorEl) errorEl.hidden = false;
+    }, { once: true });
+  });
 }
 
 function renderQuickMoneyPhase(state) {

@@ -180,6 +180,8 @@ function renderReveal() {
   const winnerClass = buzz.lockedBy ? 'buzz-winner' : '';
   const winnerPanel = `<p><b>Buzz Status:</b> ${buzzState}</p><p class="${winnerClass}"><b>Winner:</b> ${buzz.lockedBy || 'None'}</p><p><b>Lock Time:</b> ${lockTime}</p>`;
   const indicator = isMultiplier ? '<p><strong>⚡ Mogul Multiplier clue is active.</strong></p>' : '';
+  const media = state.revealedClue.media;
+  const mediaHtml = media ? renderClueMedia(media, 'host') : '';
   const config = state.config || {};
   const tieGuidance = state.tieGuidance?.hasTie
     ? `<p><b>Tie Guidance:</b> ${state.tieGuidance.message} (players: ${(state.tieGuidance.tiedPlayers || []).join(', ')})</p>`
@@ -188,13 +190,14 @@ function renderReveal() {
 
   if (isMultiplier) {
     multiplierCard.hidden = false;
-    el.innerHTML = `<p><b>Answer:</b> ${state.revealedClue.answer}</p><p><b>Expected question:</b> ${state.revealedClue.question}</p><p><b>Buzz:</b> ${buzzStatus}</p>${winnerPanel}${indicator}${ruleSummary}`;
+    el.innerHTML = `<p><b>Answer:</b> ${state.revealedClue.answer}</p><p><b>Expected question:</b> ${state.revealedClue.question}</p>${mediaHtml}<p><b>Buzz:</b> ${buzzStatus}</p>${winnerPanel}${indicator}${ruleSummary}`;
     return;
   }
 
   multiplierCard.hidden = true;
   const fields = state.players.map((p) => `<label>${p.name}<select name="${p.name}"><option value="skip">Skip</option><option value="correct">Correct</option><option value="incorrect">Incorrect</option></select></label>`).join('');
-  el.innerHTML = `<p><b>Answer:</b> ${state.revealedClue.answer}</p><p><b>Expected question:</b> ${state.revealedClue.question}</p><p><b>Buzz:</b> ${buzzStatus}</p>${winnerPanel}${indicator}${ruleSummary}<div class="controls"><button id="openBuzz" type="button" ${buzz.open || buzz.lockedBy ? 'disabled' : ''}>Open Buzz</button><button id="resetBuzz" type="button" ${!buzz.lockedBy && !buzz.open ? 'disabled' : ''}>Reset Buzz</button></div><form id="scoreForm">${fields}<button type="submit" ${!buzz.lockedBy ? 'disabled' : ''}>Apply Scores</button></form>`;
+  el.innerHTML = `<p><b>Answer:</b> ${state.revealedClue.answer}</p><p><b>Expected question:</b> ${state.revealedClue.question}</p>${mediaHtml}<p><b>Buzz:</b> ${buzzStatus}</p>${winnerPanel}${indicator}${ruleSummary}<div class="controls"><button id="openBuzz" type="button" ${buzz.open || buzz.lockedBy ? 'disabled' : ''}>Open Buzz</button><button id="resetBuzz" type="button" ${!buzz.lockedBy && !buzz.open ? 'disabled' : ''}>Reset Buzz</button></div><form id="scoreForm">${fields}<button type="submit" ${!buzz.lockedBy ? 'disabled' : ''}>Apply Scores</button></form>`;
+  bindMediaErrorHandlers(el);
   const openBuzzButton = document.getElementById('openBuzz');
   if (openBuzzButton) {
     openBuzzButton.addEventListener('click', async () => {
@@ -215,6 +218,22 @@ function renderReveal() {
     const results = {};
     for (const [k,v] of data.entries()) results[k]=v;
     await post('/host/score-clue', { playerResults: results });
+  });
+}
+function renderClueMedia(media, contextId) {
+  const caption = media.caption ? `<figcaption>${media.caption}</figcaption>` : '';
+  const alt = media.altText || 'Clue media';
+  if (media.type === 'image') return `<figure class="clue-media"><img data-clue-media="${contextId}" src="${media.url}" alt="${alt}" /><div class="media-error" hidden>⚠️ Media failed to load.</div>${caption}</figure>`;
+  if (media.type === 'audio') return `<figure class="clue-media"><audio data-clue-media="${contextId}" controls src="${media.url}"></audio><div class="media-error" hidden>⚠️ Media failed to load.</div>${caption}</figure>`;
+  if (media.type === 'video') return `<figure class="clue-media"><video data-clue-media="${contextId}" controls src="${media.url}"></video><div class="media-error" hidden>⚠️ Media failed to load.</div>${caption}</figure>`;
+  return '';
+}
+function bindMediaErrorHandlers(root) {
+  root.querySelectorAll('[data-clue-media]').forEach((node) => {
+    node.addEventListener('error', () => {
+      const errorEl = node.parentElement?.querySelector('.media-error');
+      if (errorEl) errorEl.hidden = false;
+    }, { once: true });
   });
 }
 
@@ -411,7 +430,7 @@ if (roomSetupForm) {
 }
 
 function createDefaultDefinitionState() {
-  const mkClue = (value = 100) => ({ value, answer: '', question: '' });
+  const mkClue = (value = 100) => ({ value, answer: '', question: '', media: null });
   const mkCategory = (name = 'New Category', base = 100) => ({ name, clues: Array.from({ length: 5 }, (_, i) => mkClue(base * (i + 1))) });
   const mkRound = (base = 100) => ({ categories: Array.from({ length: 5 }, (_, i) => mkCategory(`Category ${i + 1}`, base)) });
   return {
@@ -453,6 +472,11 @@ function renderRoundEditor(containerId, roundKey) {
           <label>Value</label><input type="number" data-edit="${roundKey}.clue.${cIdx}.${rIdx}.value" value="${clue.value || ''}" />
           <label>Answer</label><input data-edit="${roundKey}.clue.${cIdx}.${rIdx}.answer" value="${clue.answer || ''}" />
           <label>Question</label><input data-edit="${roundKey}.clue.${cIdx}.${rIdx}.question" value="${clue.question || ''}" />
+          <label>Media Type</label><select data-edit="${roundKey}.clue.${cIdx}.${rIdx}.mediaType"><option value="">None</option><option value="image" ${clue.media?.type === 'image' ? 'selected' : ''}>Image</option><option value="audio" ${clue.media?.type === 'audio' ? 'selected' : ''}>Audio</option><option value="video" ${clue.media?.type === 'video' ? 'selected' : ''}>Video</option></select>
+          <label>Media URL</label><input data-edit="${roundKey}.clue.${cIdx}.${rIdx}.mediaUrl" value="${clue.media?.url || ''}" placeholder="/media/example.png or https://..." />
+          <label>Alt Text</label><input data-edit="${roundKey}.clue.${cIdx}.${rIdx}.mediaAltText" value="${clue.media?.altText || ''}" />
+          <label>Caption</label><input data-edit="${roundKey}.clue.${cIdx}.${rIdx}.mediaCaption" value="${clue.media?.caption || ''}" />
+          <input type="file" data-upload="${roundKey}.${cIdx}.${rIdx}" accept="image/*,audio/*,video/*" />
           <div class="controls">
             <button type="button" data-action="${roundKey}.clue.add.${cIdx}.${rIdx}">+ Clue</button>
             <button type="button" data-action="${roundKey}.clue.remove.${cIdx}.${rIdx}" ${cat.clues.length <= 1 ? 'disabled' : ''}>- Clue</button>
@@ -514,7 +538,35 @@ function bindGameDefinitionEditor() {
     }
     const [roundKey, type, a, b, field] = parts;
     if (type === 'category') gameDefinitionState[roundKey].categories[Number(a)].name = value;
-    if (type === 'clue') gameDefinitionState[roundKey].categories[Number(a)].clues[Number(b)][field] = field === 'value' ? Number(value) : value;
+    if (type === 'clue') {
+      const clue = gameDefinitionState[roundKey].categories[Number(a)].clues[Number(b)];
+      if (field === 'value') clue[field] = Number(value);
+      else if (field === 'mediaType') clue.media = value ? { ...(clue.media || {}), type: value } : null;
+      else if (field === 'mediaUrl') clue.media = value ? { ...(clue.media || {}), url: value } : (clue.media ? { ...clue.media, url: '' } : null);
+      else if (field === 'mediaAltText') {
+        clue.media = clue.media || { type: 'image', url: '' };
+        clue.media.altText = value;
+      } else if (field === 'mediaCaption') {
+        clue.media = clue.media || { type: 'image', url: '' };
+        clue.media.caption = value;
+      }
+      else clue[field] = value;
+    }
+  });
+  form.addEventListener('change', async (event) => {
+    const uploadKey = event.target.dataset.upload;
+    if (!uploadKey || !event.target.files?.[0]) return;
+    const errorEl = document.getElementById('gameDefinitionError');
+    const body = new FormData();
+    body.set('media', event.target.files[0]);
+    const res = await fetch('/host/upload-media', { method: 'POST', body });
+    const payload = await res.json();
+    if (!res.ok) { errorEl.textContent = payload?.error?.message || 'Upload failed.'; return; }
+    const [roundKey, cRaw, rRaw] = uploadKey.split('.');
+    const clue = gameDefinitionState[roundKey].categories[Number(cRaw)].clues[Number(rRaw)];
+    clue.media = { ...(clue.media || {}), ...payload.media };
+    errorEl.textContent = `Uploaded ${event.target.files[0].name}.`;
+    renderGameDefinitionEditor();
   });
 
   form.addEventListener('click', (event) => {
@@ -533,7 +585,7 @@ function bindGameDefinitionEditor() {
     }
     if (entity === 'clue') {
       const clues = round.categories[indexA].clues;
-      if (op === 'add') clues.splice(indexB + 1, 0, { value: 100, answer: '', question: '' });
+      if (op === 'add') clues.splice(indexB + 1, 0, { value: 100, answer: '', question: '', media: null });
       if (op === 'remove') clues.splice(indexB, 1);
       if (op === 'up' && indexB > 0) round.categories[indexA].clues = moveInArray(clues, indexB, indexB - 1);
       if (op === 'down' && indexB < clues.length - 1) round.categories[indexA].clues = moveInArray(clues, indexB, indexB + 1);

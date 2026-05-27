@@ -386,12 +386,25 @@ if (roomSetupForm) {
 }
 
 function createDefaultDefinitionState() {
-  const mkClues = (base) => Array.from({ length: 5 }, (_, i) => ({ value: base * (i + 1), answer: '', question: '' }));
-  const mkRound = (base) => ({ categories: Array.from({ length: 5 }, (_, i) => ({ name: `Category ${i + 1}`, clues: mkClues(base) })) });
-  return { round1: mkRound(100), round2: { mogulMultiplier: { categoryIndex: 0, clueIndex: 0 }, categories: mkRound(200).categories }, quickMoneyPrompts: Array.from({ length: 5 }, () => '') };
+  const mkClue = (value = 100) => ({ value, answer: '', question: '' });
+  const mkCategory = (name = 'New Category', base = 100) => ({ name, clues: Array.from({ length: 5 }, (_, i) => mkClue(base * (i + 1))) });
+  const mkRound = (base = 100) => ({ categories: Array.from({ length: 5 }, (_, i) => mkCategory(`Category ${i + 1}`, base)) });
+  return {
+    metadata: { name: '' },
+    round1: mkRound(100),
+    round2: { categories: mkRound(200).categories, mogulMultiplier: { categoryIndex: 0, clueIndex: 0 } },
+    quickMoneyPrompts: Array.from({ length: 5 }, () => '')
+  };
 }
 
 let gameDefinitionState = createDefaultDefinitionState();
+
+function moveInArray(list, from, to) {
+  const next = [...list];
+  const [item] = next.splice(from, 1);
+  next.splice(to, 0, item);
+  return next;
+}
 
 function renderRoundEditor(containerId, roundKey) {
   const container = document.getElementById(containerId);
@@ -399,13 +412,27 @@ function renderRoundEditor(containerId, roundKey) {
   const round = gameDefinitionState[roundKey];
   container.innerHTML = round.categories.map((cat, cIdx) => `
     <fieldset>
-      <label>Category ${cIdx + 1} Name</label>
+      <legend>${roundKey.toUpperCase()} Category ${cIdx + 1}</legend>
+      <label>Category Name</label>
       <input data-edit="${roundKey}.category.${cIdx}.name" value="${cat.name || ''}" />
+      <div class="controls">
+        <button type="button" data-action="${roundKey}.category.add.${cIdx}">+ Category</button>
+        <button type="button" data-action="${roundKey}.category.remove.${cIdx}" ${round.categories.length <= 1 ? 'disabled' : ''}>- Category</button>
+        <button type="button" data-action="${roundKey}.category.up.${cIdx}" ${cIdx === 0 ? 'disabled' : ''}>↑</button>
+        <button type="button" data-action="${roundKey}.category.down.${cIdx}" ${cIdx === round.categories.length - 1 ? 'disabled' : ''}>↓</button>
+      </div>
       ${cat.clues.map((clue, rIdx) => `
         <div>
-          <label>Clue ${rIdx + 1} Value</label><input type="number" data-edit="${roundKey}.clue.${cIdx}.${rIdx}.value" value="${clue.value || ''}" />
+          <h5>Clue ${rIdx + 1}</h5>
+          <label>Value</label><input type="number" data-edit="${roundKey}.clue.${cIdx}.${rIdx}.value" value="${clue.value || ''}" />
           <label>Answer</label><input data-edit="${roundKey}.clue.${cIdx}.${rIdx}.answer" value="${clue.answer || ''}" />
           <label>Question</label><input data-edit="${roundKey}.clue.${cIdx}.${rIdx}.question" value="${clue.question || ''}" />
+          <div class="controls">
+            <button type="button" data-action="${roundKey}.clue.add.${cIdx}.${rIdx}">+ Clue</button>
+            <button type="button" data-action="${roundKey}.clue.remove.${cIdx}.${rIdx}" ${cat.clues.length <= 1 ? 'disabled' : ''}>- Clue</button>
+            <button type="button" data-action="${roundKey}.clue.up.${cIdx}.${rIdx}" ${rIdx === 0 ? 'disabled' : ''}>↑</button>
+            <button type="button" data-action="${roundKey}.clue.down.${cIdx}.${rIdx}" ${rIdx === cat.clues.length - 1 ? 'disabled' : ''}>↓</button>
+          </div>
         </div>`).join('')}
     </fieldset>
   `).join('');
@@ -414,7 +441,29 @@ function renderRoundEditor(containerId, roundKey) {
 function renderQuickMoneyEditor() {
   const container = document.getElementById('quickMoneyEditor');
   if (!container) return;
-  container.innerHTML = gameDefinitionState.quickMoneyPrompts.map((prompt, i) => `<label>Prompt ${i + 1}</label><input data-edit="quick.${i}" value="${prompt || ''}" />`).join('');
+  container.innerHTML = gameDefinitionState.quickMoneyPrompts.map((prompt, i) => `
+    <div>
+      <label>Prompt ${i + 1}</label>
+      <input data-edit="quick.${i}" value="${prompt || ''}" />
+      <button type="button" data-action="quick.add.${i}">+ Prompt</button>
+      <button type="button" data-action="quick.remove.${i}" ${gameDefinitionState.quickMoneyPrompts.length <= 1 ? 'disabled' : ''}>- Prompt</button>
+      <button type="button" data-action="quick.up.${i}" ${i === 0 ? 'disabled' : ''}>↑</button>
+      <button type="button" data-action="quick.down.${i}" ${i === gameDefinitionState.quickMoneyPrompts.length - 1 ? 'disabled' : ''}>↓</button>
+    </div>`).join('');
+}
+
+function toServerDefinitionPayload() {
+  return {
+    round1: { categories: gameDefinitionState.round1.categories },
+    round2: {
+      categories: gameDefinitionState.round2.categories,
+      mogulMultiplier: {
+        categoryIndex: Number(gameDefinitionState.round2.mogulMultiplier.categoryIndex || 0),
+        clueIndex: Number(gameDefinitionState.round2.mogulMultiplier.clueIndex || 0)
+      }
+    },
+    quickMoneyPrompts: gameDefinitionState.quickMoneyPrompts
+  };
 }
 
 function renderGameDefinitionEditor() {
@@ -441,26 +490,53 @@ function bindGameDefinitionEditor() {
     if (type === 'clue') gameDefinitionState[roundKey].categories[Number(a)].clues[Number(b)][field] = field === 'value' ? Number(value) : value;
   });
 
+  form.addEventListener('click', (event) => {
+    const action = event.target.dataset.action;
+    if (!action) return;
+    const [scope, entity, op, a, b] = action.split('.');
+    if (scope === 'quick') return;
+    const indexA = Number(a);
+    const indexB = Number(b);
+    const round = gameDefinitionState[scope];
+    if (entity === 'category') {
+      if (op === 'add') round.categories.splice(indexA + 1, 0, { name: 'New Category', clues: [{ value: 100, answer: '', question: '' }] });
+      if (op === 'remove') round.categories.splice(indexA, 1);
+      if (op === 'up' && indexA > 0) round.categories = moveInArray(round.categories, indexA, indexA - 1);
+      if (op === 'down' && indexA < round.categories.length - 1) round.categories = moveInArray(round.categories, indexA, indexA + 1);
+    }
+    if (entity === 'clue') {
+      const clues = round.categories[indexA].clues;
+      if (op === 'add') clues.splice(indexB + 1, 0, { value: 100, answer: '', question: '' });
+      if (op === 'remove') clues.splice(indexB, 1);
+      if (op === 'up' && indexB > 0) round.categories[indexA].clues = moveInArray(clues, indexB, indexB - 1);
+      if (op === 'down' && indexB < clues.length - 1) round.categories[indexA].clues = moveInArray(clues, indexB, indexB + 1);
+    }
+    renderGameDefinitionEditor();
+  });
+
+  form.addEventListener('click', (event) => {
+    const action = event.target.dataset.action;
+    if (!action || !action.startsWith('quick.')) return;
+    const [, op, idxRaw] = action.split('.');
+    const idx = Number(idxRaw);
+    const prompts = gameDefinitionState.quickMoneyPrompts;
+    if (op === 'add') prompts.splice(idx + 1, 0, '');
+    if (op === 'remove') prompts.splice(idx, 1);
+    if (op === 'up' && idx > 0) gameDefinitionState.quickMoneyPrompts = moveInArray(prompts, idx, idx - 1);
+    if (op === 'down' && idx < prompts.length - 1) gameDefinitionState.quickMoneyPrompts = moveInArray(prompts, idx, idx + 1);
+    renderGameDefinitionEditor();
+  });
+
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const errorEl = document.getElementById('gameDefinitionError');
     const fd = new FormData(form);
+    gameDefinitionState.metadata.name = String(fd.get('name') || '').trim();
     gameDefinitionState.round2.mogulMultiplier.categoryIndex = Number(fd.get('mogulCategoryIndex'));
     gameDefinitionState.round2.mogulMultiplier.clueIndex = Number(fd.get('mogulClueIndex'));
 
-    const categoryCountValid = ['round1', 'round2'].every((roundKey) => gameDefinitionState[roundKey].categories.length === 5 && gameDefinitionState[roundKey].categories.every((c) => c.clues.length === 5));
-    if (!categoryCountValid) {
-      errorEl.textContent = 'Validation error: each round must have 5 categories with 5 clues each.';
-      return;
-    }
-
-    if (gameDefinitionState.quickMoneyPrompts.length !== 5) {
-      errorEl.textContent = 'Validation error: exactly 5 quick money prompts are required.';
-      return;
-    }
-
     try {
-      await post('/host/game-definitions', { name: fd.get('name'), data: gameDefinitionState });
+      await post('/host/game-definitions', { name: gameDefinitionState.metadata.name, data: toServerDefinitionPayload() });
       errorEl.textContent = 'Saved successfully.';
     } catch (error) {
       errorEl.textContent = error.message;
@@ -479,7 +555,7 @@ function bindGameDefinitionEditor() {
         document.getElementById('gameDefinitionError').textContent = payload?.error?.message || 'Failed to load definition';
         return;
       }
-      gameDefinitionState = payload.data;
+      gameDefinitionState = { ...createDefaultDefinitionState(), ...payload.data, metadata: { name: payload.name } };
       form.mogulCategoryIndex.value = String(payload.data.round2.mogulMultiplier.categoryIndex);
       form.mogulClueIndex.value = String(payload.data.round2.mogulMultiplier.clueIndex);
       renderGameDefinitionEditor();

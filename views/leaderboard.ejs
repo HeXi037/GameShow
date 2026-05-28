@@ -1,0 +1,30 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Leaderboard</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main>
+    <h1>Leaderboard</h1>
+    <label>Sort By
+      <select id="sortBy">
+        <option value="wins">Wins</option>
+        <option value="averageScore">Average Score</option>
+        <option value="totalGames">Total Games</option>
+        <option value="fastestBuzz">Fastest Buzz</option>
+      </select>
+    </label>
+    <label>Order
+      <select id="order"><option value="desc">Desc</option><option value="asc">Asc</option></select>
+    </label>
+    <table id="leaderboardTable">
+      <thead><tr><th>Player</th><th>Wins</th><th>Total Games</th><th>Average Score</th><th>Fastest Buzz</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </main>
+  <script src="/leaderboard.js"></script>
+</body>
+</html>

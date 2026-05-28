@@ -126,3 +126,37 @@ test('accepts valid clue media and rejects malformed media schema', async () => 
   });
   assert.equal(badRes.status, 400);
 });
+
+
+test('supports saving/loading legacy and extended editor-backed schemas', async () => {
+  const legacy = JSON.parse(fs.readFileSync(path.join(dataDir, 'legacy-game.json'), 'utf8'));
+  const extended = JSON.parse(fs.readFileSync(path.join(dataDir, 'extended-multimedia-game.json'), 'utf8'));
+
+  ['test-legacy-schema.json', 'test-extended-schema.json'].forEach((f) => { const fp = path.join(dataDir, f); if (fs.existsSync(fp)) fs.unlinkSync(fp); });
+
+  const legacySave = await hostRequest('/host/game-definitions', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'test-legacy-schema', data: legacy })
+  });
+  assert.equal(legacySave.status, 201);
+  createdFiles.push('test-legacy-schema.json');
+
+  const extSave = await hostRequest('/host/game-definitions', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'test-extended-schema', data: extended })
+  });
+  assert.equal(extSave.status, 201);
+  createdFiles.push('test-extended-schema.json');
+
+  const legacyLoad = await hostRequest('/host/game-definitions/test-legacy-schema');
+  assert.equal(legacyLoad.status, 200);
+  const legacyPayload = await legacyLoad.json();
+  assert.equal(legacyPayload.data.quickMoney.promptCount, 5);
+
+  const extLoad = await hostRequest('/host/game-definitions/test-extended-schema');
+  assert.equal(extLoad.status, 200);
+  const extPayload = await extLoad.json();
+  assert.equal(extPayload.data.quickMoney.promptCount, 5);
+  assert.equal(extPayload.data.round1.categories[0].clues[0].media.type, 'image');
+
+  const missing = await hostRequest('/host/game-definitions/not-a-real-schema');
+  assert.equal(missing.status, 404);
+});

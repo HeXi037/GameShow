@@ -1,0 +1,29 @@
+{
+  "round1": {
+    "categories": [
+      { "name": "Media", "clues": [
+        { "value": 100, "answer": "A", "question": "Q", "media": { "type": "image", "url": "/media/pic1.png", "altText": "pic", "caption": "caption" } },
+        { "value": 200, "answer": "A", "question": "Q" },
+        { "value": 300, "answer": "A", "question": "Q" },
+        { "value": 400, "answer": "A", "question": "Q" },
+        { "value": 500, "answer": "A", "question": "Q" }
+      ]},
+      { "name": "Cat2", "clues": [{"value":100,"answer":"A","question":"Q"},{"value":200,"answer":"A","question":"Q"},{"value":300,"answer":"A","question":"Q"},{"value":400,"answer":"A","question":"Q"},{"value":500,"answer":"A","question":"Q"}]},
+      { "name": "Cat3", "clues": [{"value":100,"answer":"A","question":"Q"},{"value":200,"answer":"A","question":"Q"},{"value":300,"answer":"A","question":"Q"},{"value":400,"answer":"A","question":"Q"},{"value":500,"answer":"A","question":"Q"}]},
+      { "name": "Cat4", "clues": [{"value":100,"answer":"A","question":"Q"},{"value":200,"answer":"A","question":"Q"},{"value":300,"answer":"A","question":"Q"},{"value":400,"answer":"A","question":"Q"},{"value":500,"answer":"A","question":"Q"}]},
+      { "name": "Cat5", "clues": [{"value":100,"answer":"A","question":"Q"},{"value":200,"answer":"A","question":"Q"},{"value":300,"answer":"A","question":"Q"},{"value":400,"answer":"A","question":"Q"},{"value":500,"answer":"A","question":"Q"}]}
+    ]
+  },
+  "round2": {
+    "mogulMultiplier": { "categoryIndex": 0, "clueIndex": 1 },
+    "categories": [
+      { "name": "R2-1", "clues": [{"value":200,"answer":"A","question":"Q"},{"value":400,"answer":"A","question":"Q"},{"value":600,"answer":"A","question":"Q"},{"value":800,"answer":"A","question":"Q"},{"value":1000,"answer":"A","question":"Q"}]},
+      { "name": "R2-2", "clues": [{"value":200,"answer":"A","question":"Q"},{"value":400,"answer":"A","question":"Q"},{"value":600,"answer":"A","question":"Q"},{"value":800,"answer":"A","question":"Q"},{"value":1000,"answer":"A","question":"Q"}]},
+      { "name": "R2-3", "clues": [{"value":200,"answer":"A","question":"Q"},{"value":400,"answer":"A","question":"Q"},{"value":600,"answer":"A","question":"Q"},{"value":800,"answer":"A","question":"Q"},{"value":1000,"answer":"A","question":"Q"}]},
+      { "name": "R2-4", "clues": [{"value":200,"answer":"A","question":"Q"},{"value":400,"answer":"A","question":"Q"},{"value":600,"answer":"A","question":"Q"},{"value":800,"answer":"A","question":"Q"},{"value":1000,"answer":"A","question":"Q"}]},
+      { "name": "R2-5", "clues": [{"value":200,"answer":"A","question":"Q"},{"value":400,"answer":"A","question":"Q"},{"value":600,"answer":"A","question":"Q"},{"value":800,"answer":"A","question":"Q"},{"value":1000,"answer":"A","question":"Q"}]}
+    ]
+  },
+  "quickMoney": { "promptCount": 5, "minPoints": 5, "maxPoints": 75 },
+  "quickMoneyPrompts": ["P1","P2","P3","P4","P5"]
+}

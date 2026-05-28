@@ -63,3 +63,25 @@ test('answer overwrite prevention blocks second submit for same clue/player', ()
   assert.equal(alreadySubmitted, true);
   assert.equal(room.gameState.answerCapture.byPlayer.A.answer, 'first');
 });
+
+
+test('answer-capture lifecycle resets per clue and preserves archived order deterministically', () => {
+  const room = seedRoom('ROOML', ['A', 'B']);
+
+  room.gameState = lockBuzz(room.gameState, 'A', 1000).state;
+  room.gameState.answerCapture.byPlayer.A = { playerName: 'A', clueKey: 'r1:c0:q0', answer: 'alpha', submittedAt: 1001 };
+  room.gameState.archivedAnswers.push(room.gameState.answerCapture.byPlayer.A);
+
+  // next clue begins: answer-capture keyed to new clue
+  room.gameState.answerCapture = { clueKey: 'r1:c0:q1', byPlayer: {} };
+  room.gameState.buzz = { ...room.gameState.buzz, lockedBy: null };
+  room.gameState = lockBuzz(room.gameState, 'B', 2000).state;
+  room.gameState.answerCapture.byPlayer.B = { playerName: 'B', clueKey: 'r1:c0:q1', answer: 'beta', submittedAt: 2001 };
+  room.gameState.archivedAnswers.push(room.gameState.answerCapture.byPlayer.B);
+
+  assert.equal(room.gameState.archivedAnswers.length, 2);
+  assert.deepEqual(room.gameState.archivedAnswers.map((x) => x.clueKey), ['r1:c0:q0', 'r1:c0:q1']);
+  assert.deepEqual(room.gameState.archivedAnswers.map((x) => x.submittedAt), [1001, 2001]);
+  assert.equal(room.gameState.answerCapture.byPlayer.A, undefined);
+  assert.equal(room.gameState.answerCapture.byPlayer.B.answer, 'beta');
+});

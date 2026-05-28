@@ -158,3 +158,20 @@ test('route views include required accessibility roles and labels', async () => 
   assert.match(hostHtml, /id="hostReveal" aria-live="polite"/);
   assert.match(hostHtml, /id="quickMoneyStatus" aria-live="polite"/);
 });
+
+
+test('export route requires auth and rejects invalid format', async () => {
+  saveSession('EXR3', { phase: 'round1', players: [{ name: 'A', score: 42 }] });
+  await hostPost('/host/resume', { roomCode: 'EXR3' });
+
+  const unauth = await fetch(`${baseUrl}/host/export/EXR3`, { redirect: 'manual' });
+  assert.equal(unauth.status, 302);
+
+  const badFormat = await fetch(`${baseUrl}/host/export/EXR3?format=xml`, { headers: { Cookie: cookie } });
+  assert.equal(badFormat.status, 200);
+  assert.match(badFormat.headers.get('content-type') || '', /application\/json/);
+
+  const jsonRes = await fetch(`${baseUrl}/host/export/EXR3?format=json`, { headers: { Cookie: cookie } });
+  assert.equal(jsonRes.status, 200);
+  assert.match(jsonRes.headers.get('content-type') || '', /application\/json/);
+});

@@ -309,3 +309,12 @@ test('advanceQuickMoney enforces configured min/max points range', () => {
   assert.equal(advanceQuickMoney(state, { playerName: 'A', promptIndex: 0, answer: 'ok', points: 26 }).error, 'Points must be between 10 and 25.');
   assert.equal(advanceQuickMoney(state, { playerName: 'A', promptIndex: 0, answer: 'ok', points: 10 }).error, undefined);
 });
+
+
+test('initializeGame keeps deterministic quick-money defaults while honoring variable finalists', () => {
+  const state = initializeGame({ playerNames: ['A', 'B', 'C', 'D'], boardData: makeBoard(6, 5, 50), topFinalists: 3 });
+  assert.equal(state.quickMoney.topFinalists, 3);
+  assert.equal(state.quickMoney.promptCount, 5);
+  assert.equal(state.quickMoney.minPoints, 0);
+  assert.equal(state.quickMoney.maxPoints, 1000);
+});

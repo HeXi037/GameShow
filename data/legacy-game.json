@@ -1,0 +1,321 @@
+{
+  "round1": {
+    "categories": [
+      {
+        "name": "Legacy 1",
+        "clues": [
+          {
+            "value": 100,
+            "answer": "A1",
+            "question": "Q1"
+          },
+          {
+            "value": 200,
+            "answer": "A2",
+            "question": "Q2"
+          },
+          {
+            "value": 300,
+            "answer": "A3",
+            "question": "Q3"
+          },
+          {
+            "value": 400,
+            "answer": "A4",
+            "question": "Q4"
+          },
+          {
+            "value": 500,
+            "answer": "A5",
+            "question": "Q5"
+          }
+        ]
+      },
+      {
+        "name": "Legacy 2",
+        "clues": [
+          {
+            "value": 100,
+            "answer": "A1",
+            "question": "Q1"
+          },
+          {
+            "value": 200,
+            "answer": "A2",
+            "question": "Q2"
+          },
+          {
+            "value": 300,
+            "answer": "A3",
+            "question": "Q3"
+          },
+          {
+            "value": 400,
+            "answer": "A4",
+            "question": "Q4"
+          },
+          {
+            "value": 500,
+            "answer": "A5",
+            "question": "Q5"
+          }
+        ]
+      },
+      {
+        "name": "Legacy 3",
+        "clues": [
+          {
+            "value": 100,
+            "answer": "A1",
+            "question": "Q1"
+          },
+          {
+            "value": 200,
+            "answer": "A2",
+            "question": "Q2"
+          },
+          {
+            "value": 300,
+            "answer": "A3",
+            "question": "Q3"
+          },
+          {
+            "value": 400,
+            "answer": "A4",
+            "question": "Q4"
+          },
+          {
+            "value": 500,
+            "answer": "A5",
+            "question": "Q5"
+          }
+        ]
+      },
+      {
+        "name": "Legacy 4",
+        "clues": [
+          {
+            "value": 100,
+            "answer": "A1",
+            "question": "Q1"
+          },
+          {
+            "value": 200,
+            "answer": "A2",
+            "question": "Q2"
+          },
+          {
+            "value": 300,
+            "answer": "A3",
+            "question": "Q3"
+          },
+          {
+            "value": 400,
+            "answer": "A4",
+            "question": "Q4"
+          },
+          {
+            "value": 500,
+            "answer": "A5",
+            "question": "Q5"
+          }
+        ]
+      },
+      {
+        "name": "Legacy 5",
+        "clues": [
+          {
+            "value": 100,
+            "answer": "A1",
+            "question": "Q1"
+          },
+          {
+            "value": 200,
+            "answer": "A2",
+            "question": "Q2"
+          },
+          {
+            "value": 300,
+            "answer": "A3",
+            "question": "Q3"
+          },
+          {
+            "value": 400,
+            "answer": "A4",
+            "question": "Q4"
+          },
+          {
+            "value": 500,
+            "answer": "A5",
+            "question": "Q5"
+          }
+        ]
+      }
+    ]
+  },
+  "round2": {
+    "categories": [
+      {
+        "name": "Legacy 1",
+        "clues": [
+          {
+            "value": 200,
+            "answer": "B1",
+            "question": "R2Q1"
+          },
+          {
+            "value": 400,
+            "answer": "B2",
+            "question": "R2Q2"
+          },
+          {
+            "value": 600,
+            "answer": "B3",
+            "question": "R2Q3"
+          },
+          {
+            "value": 800,
+            "answer": "B4",
+            "question": "R2Q4"
+          },
+          {
+            "value": 1000,
+            "answer": "B5",
+            "question": "R2Q5"
+          }
+        ]
+      },
+      {
+        "name": "Legacy 2",
+        "clues": [
+          {
+            "value": 200,
+            "answer": "B1",
+            "question": "R2Q1"
+          },
+          {
+            "value": 400,
+            "answer": "B2",
+            "question": "R2Q2"
+          },
+          {
+            "value": 600,
+            "answer": "B3",
+            "question": "R2Q3"
+          },
+          {
+            "value": 800,
+            "answer": "B4",
+            "question": "R2Q4"
+          },
+          {
+            "value": 1000,
+            "answer": "B5",
+            "question": "R2Q5"
+          }
+        ]
+      },
+      {
+        "name": "Legacy 3",
+        "clues": [
+          {
+            "value": 200,
+            "answer": "B1",
+            "question": "R2Q1"
+          },
+          {
+            "value": 400,
+            "answer": "B2",
+            "question": "R2Q2"
+          },
+          {
+            "value": 600,
+            "answer": "B3",
+            "question": "R2Q3"
+          },
+          {
+            "value": 800,
+            "answer": "B4",
+            "question": "R2Q4"
+          },
+          {
+            "value": 1000,
+            "answer": "B5",
+            "question": "R2Q5"
+          }
+        ]
+      },
+      {
+        "name": "Legacy 4",
+        "clues": [
+          {
+            "value": 200,
+            "answer": "B1",
+            "question": "R2Q1"
+          },
+          {
+            "value": 400,
+            "answer": "B2",
+            "question": "R2Q2"
+          },
+          {
+            "value": 600,
+            "answer": "B3",
+            "question": "R2Q3"
+          },
+          {
+            "value": 800,
+            "answer": "B4",
+            "question": "R2Q4"
+          },
+          {
+            "value": 1000,
+            "answer": "B5",
+            "question": "R2Q5"
+          }
+        ]
+      },
+      {
+        "name": "Legacy 5",
+        "clues": [
+          {
+            "value": 200,
+            "answer": "B1",
+            "question": "R2Q1"
+          },
+          {
+            "value": 400,
+            "answer": "B2",
+            "question": "R2Q2"
+          },
+          {
+            "value": 600,
+            "answer": "B3",
+            "question": "R2Q3"
+          },
+          {
+            "value": 800,
+            "answer": "B4",
+            "question": "R2Q4"
+          },
+          {
+            "value": 1000,
+            "answer": "B5",
+            "question": "R2Q5"
+          }
+        ]
+      }
+    ],
+    "mogulMultiplier": {
+      "categoryIndex": 1,
+      "clueIndex": 2
+    }
+  },
+  "quickMoneyPrompts": [
+    "P1",
+    "P2",
+    "P3",
+    "P4",
+    "P5"
+  ]
+}

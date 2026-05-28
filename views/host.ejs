@@ -8,7 +8,7 @@
 </head>
 <body>
   <main class="layout">
-    <section>
+    <section class="main-content">
       <h1>Host Control Panel</h1>
       <div class="card">
         <h3>Connection Status</h3>
@@ -93,12 +93,12 @@
 
       <div class="card">
         <h3>Current Board Actions</h3>
-        <div id="hostBoard"></div>
+        <div class="board-wrap"><div id="hostBoard"></div></div>
       </div>
 
       <div class="card">
         <h3>Player Join Links / Codes</h3>
-        <div id="joinLinks"></div>
+        <div class="controls-wrap"><div id="joinLinks"></div></div>
       </div>
 
       
@@ -164,9 +164,9 @@
         </form>
       </div>
     </section>
-    <aside>
+    <aside class="side-panel">
       <h2>Live Scoreboard</h2>
-      <div id="scoreboard"></div>
+      <div class="scoreboard-wrap"><div id="scoreboard"></div></div>
     </aside>
   </main>
   <script>window.__INITIAL_STATE__ = <%- JSON.stringify(state) %>;</script>

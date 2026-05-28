@@ -7,7 +7,7 @@ const session = require('express-session');
 const { Server } = require('socket.io');
 const { initializeGame, selectClue, applyMultiplier, advanceQuickMoney, openBuzz, resetBuzz, lockBuzz, applyScoreAndBuzzRules, updateConfig, normalizeConfig, getRoundBoard, startQuickMoneyTurn } = require('./src/gameState');
 const { buildSessionConfig } = require('./src/envConfig');
-const { saveSession, loadSession, listSessions, archiveSession, getSessionExportJSON, getSessionExportCSV } = require('./src/sessionStore');
+const { saveSession, loadSession, listSessions, archiveSession, getSessionExportJSON, getSessionExportCSV, getLeaderboard } = require('./src/sessionStore');
 
 const app = express();
 const server = http.createServer(app);
@@ -146,6 +146,17 @@ function getHostRoom(req, res) { const code = activeRoomCode(req); const room = 
 
 app.get('/', (req, res) => res.render('index'));
 app.get('/join', (req, res) => res.render('join'));
+
+app.get('/leaderboard', (req, res) => {
+  if ((req.headers.accept || '').includes('application/json') || req.query.format === 'json') {
+    const sortBy = ['wins', 'averageScore', 'totalGames', 'fastestBuzz'].includes(String(req.query.sortBy)) ? String(req.query.sortBy) : 'wins';
+    const order = String(req.query.order || 'desc').toLowerCase() === 'asc' ? 'asc' : 'desc';
+    const offset = Number(req.query.offset || 0);
+    const limit = Number(req.query.limit || 20);
+    return res.json({ sortBy, order, offset: Math.max(0, offset), limit: Math.max(1, Math.min(200, limit)), ...getLeaderboard(sortBy, order, offset, limit) });
+  }
+  return res.render('leaderboard');
+});
 app.get('/host/login', (req, res) => res.render('login', { error: null }));
 app.post('/host/login', (req, res) => { if (req.body.password === HOST_PASSWORD) { req.session.isHost = true; return res.redirect('/host'); } return res.status(401).render('login', { error: 'Invalid password.' }); });
 app.get('/host', requireHost, (req, res) => res.render('host', { state: getRoom(activeRoomCode(req)) ? publicState(getRoom(activeRoomCode(req))) : null, sessions: listSessions() }));

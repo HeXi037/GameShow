@@ -132,6 +132,20 @@ test('upload media route validates auth, type, and size', async () => {
 });
 
 
+
+test('leaderboard API supports sorting and pagination', async () => {
+  saveSession('LB1', { players: [{ name: 'A', score: 100 }, { name: 'B', score: 50 }], buzz: { attempts: [{ playerName: 'A', buzzMs: 150 }, { playerName: 'B', buzzMs: 120 }] } });
+  saveSession('LB2', { players: [{ name: 'A', score: 80 }, { name: 'B', score: 90 }], buzz: { attempts: [{ playerName: 'A', buzzMs: 130 }] } });
+  await hostPost('/host/archive', { roomCode: 'LB1' });
+  await hostPost('/host/archive', { roomCode: 'LB2' });
+
+  const res = await fetch(`${baseUrl}/leaderboard?format=json&sortBy=fastestBuzz&order=asc&offset=0&limit=1`);
+  assert.equal(res.status, 200);
+  const payload = await res.json();
+  assert.equal(payload.entries.length, 1);
+  assert.equal(payload.entries[0].name, 'B');
+});
+
 test('route views include required accessibility roles and labels', async () => {
   const playerRes = await fetch(`${baseUrl}/join?room=ROOM1&code=ABC123`);
   assert.equal(playerRes.status, 200);

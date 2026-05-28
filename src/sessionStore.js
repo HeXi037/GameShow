@@ -49,7 +49,11 @@ function loadSession(roomCode) {
   const archivedPath = filePathFor(code, true);
   const target = fs.existsSync(activePath) ? activePath : archivedPath;
   if (!fs.existsSync(target)) return null;
-  return JSON.parse(fs.readFileSync(target, 'utf-8'));
+  const loaded = JSON.parse(fs.readFileSync(target, 'utf-8'));
+  loaded.state = loaded.state || {};
+  if (!Object.hasOwn(loaded.state, 'selectedMinigame')) loaded.state.selectedMinigame = null;
+  if (!Object.hasOwn(loaded.state, 'minigameState')) loaded.state.minigameState = { completed: false };
+  return loaded;
 }
 
 function listSessions() {

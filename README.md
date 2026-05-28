@@ -87,3 +87,32 @@ The server now:
 - Run behind a TLS-terminating reverse proxy (for example Nginx/Caddy/Traefik) so host logins and sessions are encrypted.
 - Enable secure cookies by setting `COOKIE_SECURE=true` when HTTPS is used (recommended in production).
 - Keep `SESSION_SECRET` private and use a long random value in production.
+
+## Defining Minigames
+
+Game definitions may include an optional top-level `minigames` array:
+
+```json
+"minigames": [
+  {
+    "name": "Lightning Round",
+    "type": "multipleChoice",
+    "config": {
+      "questions": [
+        {"prompt": "What’s the capital of France?", "options": ["Paris","Berlin","Rome"], "answer": 0}
+      ]
+    }
+  },
+  {
+    "name": "Scramble",
+    "type": "wordScramble",
+    "config": {
+      "puzzles": [
+        {"scrambled": "CTOA", "answer": "TACO"}
+      ]
+    }
+  }
+]
+```
+
+If no minigames are defined, the game defaults to Quick Money for the bonus round.

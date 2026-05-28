@@ -175,3 +175,17 @@ test('export route requires auth and rejects invalid format', async () => {
   assert.equal(jsonRes.status, 200);
   assert.match(jsonRes.headers.get('content-type') || '', /application\/json/);
 });
+
+test('start bonus and minigame score routes', async () => {
+  await hostSetup({ roomCode: 'MINI1', playerNames: 'A,B', localDataFile: 'minigame-sample.json', topFinalists: 2 });
+  const room = __testHooks.getOrCreateRoom('MINI1');
+  room.gameState.phase = 'round2';
+  room.gameState.round = 2;
+  room.gameState.boardData.round2.categories.forEach((cat) => cat.clues.forEach((clue) => { clue.used = true; }));
+  const startRes = await hostPost('/host/start-bonus', { type: 'minigame' });
+  assert.equal(startRes.status, 200);
+  assert.equal(room.gameState.phase, 'minigame');
+  const scoreRes = await hostPost('/host/minigame/score', { playerName: 'A', points: 50 });
+  assert.equal(scoreRes.status, 200);
+  assert.equal(room.gameState.minigameState.completed, true);
+});

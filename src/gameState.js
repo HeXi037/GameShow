@@ -17,6 +17,8 @@ function initializeGame({ playerNames, boardData, topFinalists = 2 }) {
       wrongAnswerPenalty: { mode: 'fixed', value: 100 }
     },
     buzz: null,
+    selectedMinigame: null,
+    minigameState: { completed: false },
     quickMoney: {
       finalists: [],
       currentFinalistIndex: 0,
@@ -211,13 +213,34 @@ function scoreClue(state, playerResults = {}) {
     if (nextState.round === 1) {
       nextState = { ...nextState, round: 2, phase: 'round2' };
     } else {
-      nextState = initializeQuickMoney({ ...nextState, phase: 'quickMoney' });
+      nextState = { ...nextState, phase: 'round2' };
     }
   }
 
   nextState = { ...nextState, tieGuidance: getTieGuidance(nextState) };
 
   return { state: nextState };
+}
+
+function initializeMinigame(state, minigameName) {
+  const minigames = state.boardData?.minigames;
+  if (!Array.isArray(minigames) || !minigames.length) return { state, error: 'No minigames are defined.' };
+  const selected = minigames.find((entry) => entry?.name === minigameName);
+  if (!selected) return { state, error: 'Minigame not found.' };
+  const gameState = { completed: false, name: selected.name, type: selected.type, config: selected.config || {} };
+  if (selected.type === 'multipleChoice') gameState.currentQuestionIndex = 0;
+  if (selected.type === 'wordScramble') gameState.currentPuzzleIndex = 0;
+  return { state: { ...state, phase: 'minigame', selectedMinigame: selected, minigameState: gameState } };
+}
+
+function startBonusRound(state, type) {
+  if (type === 'quickMoney') return { state: initializeQuickMoney({ ...state, phase: 'quickMoney' }) };
+  if (type === 'minigame') {
+    const name = state.boardData?.minigames?.[0]?.name;
+    if (!name) return { state, error: 'No minigames are defined.' };
+    return initializeMinigame(state, name);
+  }
+  return { state, error: 'Unknown bonus round type.' };
 }
 
 function applyMultiplier(state, { playerName, wager, correct }) {
@@ -243,7 +266,7 @@ function applyMultiplier(state, { playerName, wager, correct }) {
 
   let nextState = { ...state, players: sortPlayers(players), revealedClue: null, buzz: null };
   if (allCluesUsed(nextState)) {
-    nextState = initializeQuickMoney({ ...nextState, phase: 'quickMoney' });
+    nextState = { ...nextState, phase: 'round2' };
   }
 
   return { state: { ...nextState, tieGuidance: getTieGuidance(nextState) } };
@@ -429,4 +452,4 @@ function updateConfig(state, configPatch = {}) {
   return { ...nextState, tieGuidance: getTieGuidance(nextState) };
 }
 
-module.exports = { initializeGame, selectClue, scoreClue, applyMultiplier, advanceQuickMoney, initializeQuickMoney, allCluesUsed, openBuzz, resetBuzz, lockBuzz, applyScoreAndBuzzRules, updateConfig, normalizeConfig, getRoundBoard, startQuickMoneyTurn };
+module.exports = { initializeGame, selectClue, scoreClue, applyMultiplier, advanceQuickMoney, initializeQuickMoney, initializeMinigame, startBonusRound, allCluesUsed, openBuzz, resetBuzz, lockBuzz, applyScoreAndBuzzRules, updateConfig, normalizeConfig, getRoundBoard, startQuickMoneyTurn };

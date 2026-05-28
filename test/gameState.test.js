@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { initializeGame, selectClue, scoreClue, applyMultiplier, advanceQuickMoney, openBuzz, resetBuzz, lockBuzz, applyScoreAndBuzzRules, updateConfig, getRoundBoard, startQuickMoneyTurn } = require('../src/gameState');
+const { initializeGame, selectClue, scoreClue, applyMultiplier, advanceQuickMoney, openBuzz, resetBuzz, lockBuzz, applyScoreAndBuzzRules, updateConfig, getRoundBoard, startQuickMoneyTurn, initializeMinigame, startBonusRound } = require('../src/gameState');
 
 function makeBoard(promptCount = 5, minPoints = 0, maxPoints = 1000) {
   const makeRound = (values) => ({
@@ -317,4 +317,13 @@ test('initializeGame keeps deterministic quick-money defaults while honoring var
   assert.equal(state.quickMoney.promptCount, 5);
   assert.equal(state.quickMoney.minPoints, 0);
   assert.equal(state.quickMoney.maxPoints, 1000);
+});
+
+
+test('initializeMinigame and startBonusRound', () => {
+  const state = initializeGame({ playerNames:['A'], boardData: { ...makeBoard(), minigames:[{name:'Lightning Round', type:'multipleChoice', config:{questions:[{prompt:'p', options:['a'], answer:0}]}}] } });
+  const mg = initializeMinigame(state, 'Lightning Round');
+  assert.equal(mg.state.phase, 'minigame');
+  const quick = startBonusRound(state, 'quickMoney');
+  assert.equal(quick.state.phase, 'quickMoney');
 });

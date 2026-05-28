@@ -1,22 +1,110 @@
 body { margin: 0; font-family: Arial, sans-serif; background: #041f5c; color: #fff; }
-.layout { display: grid; grid-template-columns: 3fr 1fr; gap: 16px; padding: 16px; }
-.board { display: grid; grid-template-columns: repeat(5, minmax(120px, 1fr)); gap: 6px; }
-.tile, .category { border: 2px solid #1d3b8f; background: #06308f; color: #ffcf54; min-height: 60px; display:flex;align-items:center;justify-content:center;text-align:center;padding:6px; font-weight: bold; }
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px;
+  align-items: start;
+}
+
+.main-content,
+.side-panel {
+  min-width: 0;
+}
+
+.board-wrap,
+.scoreboard-wrap,
+.controls-wrap {
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+}
+
+.board {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(88px, 1fr));
+  gap: 6px;
+  min-width: 460px;
+}
+
+.tile, .category {
+  border: 2px solid #1d3b8f;
+  background: #06308f;
+  color: #ffcf54;
+  min-height: 60px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+  padding:6px;
+  font-weight: bold;
+}
+
 .tile { transition: transform 180ms ease, opacity 220ms ease, background-color 220ms ease; }
 .tile:not(.used) { animation: tileReveal 260ms ease; }
 .tile.used { opacity: 0.25; pointer-events:none; transform: scale(0.98); background-color: #0d2153; }
+
 .card, #scoreboard table { background: rgba(0,0,0,.2); padding: 12px; border-radius: 8px; margin-bottom: 12px; }
+
+.controls,
+#quickTimer,
+#quickSubmit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+#quickTimer input,
+#quickSubmit input,
+#quickSubmit select,
+#quickTimer button,
+#quickSubmit button,
+.controls > * {
+  flex: 1 1 180px;
+}
+
 table { width: 100%; border-collapse: collapse; }
 th, td { padding: 8px; border-bottom: 1px solid rgba(255,255,255,.2); }
 #scoreboard td:last-child { transition: color 180ms ease, transform 180ms ease; }
 #scoreboard tr.score-changed td:last-child { color: #7dff9e; transform: scale(1.08); }
 .centered { min-height: 100vh; display:grid; place-items:center; }
-input, select, button { width: 100%; margin: 4px 0; padding: 8px; }
+
+input, select, button {
+  width: 100%;
+  margin: 4px 0;
+  padding: 10px;
+  min-height: 44px;
+}
+
+#buzzButton,
+#submitAnswerButton,
+#connectButton,
+#hostReveal button,
+.controls button,
+#quickTimer button,
+#quickSubmit button {
+  min-height: 48px;
+  padding: 12px;
+}
+
 #revealed { margin-top: 12px; background: rgba(0,0,0,.3); padding: 12px; border-radius: 8px; }
 .buzz-winner { animation: buzzWinnerPulse 900ms ease 2; }
 @keyframes tileReveal { from { transform: scale(0.95); opacity: 0.65; } to { transform: scale(1); opacity: 1; } }
 @keyframes buzzWinnerPulse { 0%,100% { box-shadow: 0 0 0 rgba(125,255,158,0); } 50% { box-shadow: 0 0 0 8px rgba(125,255,158,0.25); } }
-@media (max-width: 900px) { .layout { grid-template-columns: 1fr; } .board { overflow-x:auto; } }
+
+@media (min-width: 480px) {
+  .layout { padding: 14px; gap: 14px; }
+  .board { grid-template-columns: repeat(5, minmax(96px, 1fr)); min-width: 500px; }
+}
+
+@media (min-width: 768px) {
+  .layout { padding: 16px; gap: 16px; }
+}
+
+@media (min-width: 1024px) {
+  .layout { grid-template-columns: minmax(0, 3fr) minmax(260px, 1fr); }
+}
 
 button:focus-visible,
 input:focus-visible,

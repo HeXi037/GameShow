@@ -5,7 +5,7 @@ const http = require('http');
 const multer = require('multer');
 const session = require('express-session');
 const { Server } = require('socket.io');
-const { initializeGame, selectClue, applyMultiplier, advanceQuickMoney, openBuzz, resetBuzz, lockBuzz, applyScoreAndBuzzRules, updateConfig, normalizeConfig, getRoundBoard, startQuickMoneyTurn } = require('./src/gameState');
+const { initializeGame, selectClue, applyMultiplier, advanceQuickMoney, openBuzz, resetBuzz, lockBuzz, applyScoreAndBuzzRules, updateConfig, normalizeConfig, getRoundBoard, startQuickMoneyTurn, startBonusRound, initializeMinigame } = require('./src/gameState');
 const { buildSessionConfig } = require('./src/envConfig');
 const { saveSession, loadSession, listSessions, archiveSession, getSessionExportJSON, getSessionExportCSV, getLeaderboard } = require('./src/sessionStore');
 
@@ -46,7 +46,7 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(session(buildSessionConfig(process.env)));
 
-const emptyState = () => ({ phase: 'setup', round: 1, players: [], boardData: null, revealedClue: null, buzz: null, quickMoney: { finalists: [], currentFinalistIndex: 0, promptIndex: 0, turnActive: false, answers: {}, timerEndsAt: null, active: false, completed: false, topFinalists: 2, promptCount: 5, minPoints: 0, maxPoints: 1000 }, config: normalizeConfig() });
+const emptyState = () => ({ phase: 'setup', round: 1, players: [], boardData: null, revealedClue: null, buzz: null, selectedMinigame: null, minigameState: { completed: false }, quickMoney: { finalists: [], currentFinalistIndex: 0, promptIndex: 0, turnActive: false, answers: {}, timerEndsAt: null, active: false, completed: false, topFinalists: 2, promptCount: 5, minPoints: 0, maxPoints: 1000 }, config: normalizeConfig() });
 const mkRoom = (roomCode) => ({ roomCode, gameState: emptyState(), connectedClients: new Map(), joinIdentity: { codesByPlayer: new Map(), playerByCode: new Map(), activeSocketByPlayer: new Map() } });
 const getRoom = (roomCode) => rooms.get(String(roomCode || '').trim().toUpperCase()) || null;
 function getOrCreateRoom(roomCode) { const key = String(roomCode || '').trim().toUpperCase(); if (!key) return null; if (!rooms.has(key)) rooms.set(key, mkRoom(key)); return rooms.get(key); }
@@ -56,7 +56,7 @@ function resetJoinIdentity(room, playerNames) {
   room.joinIdentity = { codesByPlayer: new Map(), playerByCode: new Map(), activeSocketByPlayer: new Map() };
   playerNames.forEach((name, i) => { const code = `P${i + 1}${room.roomCode}`; room.joinIdentity.codesByPlayer.set(name, code); room.joinIdentity.playerByCode.set(code, name); });
 }
-function publicState(room) { return { roomCode: room.roomCode, phase: room.gameState.phase, round: room.gameState.round, players: room.gameState.players, board: room.gameState.boardData ? getRoundBoard(room.gameState) : null, revealedClue: room.gameState.revealedClue, buzz: room.gameState.buzz, config: room.gameState.config, quickMoneyPrompts: room.gameState.boardData?.quickMoneyPrompts || [], quickMoney: room.gameState.quickMoney, answerCapture: room.gameState.answerCapture || { clueKey: null, byPlayer: {} }, joinCodes: {} }; }
+function publicState(room) { return { roomCode: room.roomCode, phase: room.gameState.phase, round: room.gameState.round, players: room.gameState.players, board: room.gameState.boardData ? getRoundBoard(room.gameState) : null, revealedClue: room.gameState.revealedClue, buzz: room.gameState.buzz, config: room.gameState.config, quickMoneyPrompts: room.gameState.boardData?.quickMoneyPrompts || [], quickMoney: room.gameState.quickMoney, selectedMinigame: room.gameState.selectedMinigame || null, minigameState: room.gameState.minigameState || { completed: false }, answerCapture: room.gameState.answerCapture || { clueKey: null, byPlayer: {} }, joinCodes: {} }; }
 function emitRoomState(room) { io.to(room.roomCode).emit('state:update', publicState(room)); }
 const persistRoom = (room) => saveSession(room.roomCode, room.gameState);
 
@@ -139,6 +139,23 @@ function validateGameData(data) {
     if (typeof prompt !== 'string' || !prompt.trim()) throw new Error(`quickMoneyPrompts[${i}] is required.`);
   });
   data.quickMoney = quickMoneyConfig;
+
+  const minigames = data?.minigames;
+  if (minigames != null) {
+    if (!Array.isArray(minigames)) throw new Error('minigames must be an array when provided.');
+    minigames.forEach((game, i) => {
+      if (!game || typeof game.name !== 'string' || !game.name.trim()) throw new Error(`minigames[${i}].name is required.`);
+      if (!game || typeof game.type !== 'string' || !game.type.trim()) throw new Error(`minigames[${i}].type is required.`);
+      if (!game.config || typeof game.config !== 'object' || Array.isArray(game.config)) throw new Error(`minigames[${i}].config must be an object.`);
+      if (game.type === 'multipleChoice') {
+        if (!Array.isArray(game.config.questions) || !game.config.questions.length) throw new Error(`minigames[${i}].config.questions must be a non-empty array.`);
+      } else if (game.type === 'wordScramble') {
+        if (!Array.isArray(game.config.puzzles) || !game.config.puzzles.length) throw new Error(`minigames[${i}].config.puzzles must be a non-empty array.`);
+      } else {
+        throw new Error(`minigames[${i}].type is not supported.`);
+      }
+    });
+  }
   return true;
 }
 function requireHost(req, res, next) { if (!req.session.isHost) return res.redirect('/host/login'); next(); }
@@ -267,6 +284,32 @@ app.post('/host/score-clue', requireHost, (req, res) => hostAction(req, res, (ro
 app.post('/host/config', requireHost, (req, res) => hostAction(req, res, (room) => { room.gameState = updateConfig(room.gameState, req.body || {}); }));
 app.post('/host/mogul-multiplier', requireHost, (req, res) => hostAction(req, res, (room) => { const out = applyMultiplier(room.gameState, req.body); if (out.error) throw new Error(out.error); room.gameState = out.state; }));
 app.post('/host/quick-money/start-turn', requireHost, (req, res) => hostAction(req, res, (room) => { const out = startQuickMoneyTurn(room.gameState, Number(req.body.seconds || 20)); if (out.error) throw new Error(out.error); room.gameState = out.state; }));
+
+app.post('/host/start-bonus', requireHost, (req, res) => hostAction(req, res, (room) => {
+  const type = String(req.body.type || '');
+  if (type === 'minigame') {
+    const list = room.gameState.boardData?.minigames || [];
+    if (!list.length) throw new Error('No minigames are defined.');
+    const picked = list[Math.floor(Math.random() * list.length)];
+    const out = initializeMinigame(room.gameState, picked.name);
+    if (out.error) throw new Error(out.error);
+    room.gameState = out.state;
+    return;
+  }
+  const out = startBonusRound(room.gameState, type);
+  if (out.error) throw new Error(out.error);
+  room.gameState = out.state;
+}));
+app.post('/host/minigame/score', requireHost, (req, res) => hostAction(req, res, (room) => {
+  const { playerName, points } = req.body || {};
+  const p = room.gameState.players.find((x) => x.name === playerName);
+  if (!p) throw new Error('Player not found.');
+  const n = Number(points);
+  if (!Number.isFinite(n)) throw new Error('points must be numeric.');
+  room.gameState.players = room.gameState.players.map((x) => x.name === playerName ? { ...x, score: x.score + n } : x).sort((a,b)=>b.score-a.score);
+  room.gameState.minigameState = { ...(room.gameState.minigameState || {}), completed: true };
+}));
+
 app.post('/host/quick-money/submit', requireHost, (req, res) => hostAction(req, res, (room) => { const out = advanceQuickMoney(room.gameState, req.body); if (out.error) throw new Error(out.error); room.gameState = out.state; }));
 
 io.on('connection', (socket) => {
@@ -311,6 +354,14 @@ io.on('connection', (socket) => {
     if (key && room.gameState.answerCapture.clueKey !== key) {
       room.gameState.answerCapture = { clueKey: key, byPlayer: {} };
     }
+    persistRoom(room); emitRoomState(room);
+  });
+
+  socket.on('player:minigame-answer', (payload = {}) => {
+    if (role !== 'player' || !socket.data.playerName) return;
+    if (room.gameState.phase !== 'minigame') return;
+    const answers = room.gameState.minigameState?.answers || {};
+    room.gameState.minigameState = { ...(room.gameState.minigameState || {}), answers: { ...answers, [socket.data.playerName]: payload } };
     persistRoom(room); emitRoomState(room);
   });
 

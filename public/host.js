@@ -356,6 +356,8 @@ socket.on('state:update', (next) => {
   renderPresence();
   renderJoinCodes();
   renderRules();
+  renderBonusRoundControls();
+  renderMinigameHost();
 });
 
 socket.on('connect', () => {
@@ -388,6 +390,8 @@ renderQuickMoneyCountdown();
 renderPresence();
 renderJoinCodes();
 renderRules();
+renderBonusRoundControls();
+renderMinigameHost();
 setConnectionStatus(socket.connected ? 'Connected' : 'Connecting...', socket.connected);
 
 
@@ -680,3 +684,31 @@ if (soundToggle) {
 }
 
 loadTranslations('host');
+
+function renderBonusRoundControls() {
+  const el = document.getElementById('bonusRoundControls');
+  if (!el) return;
+  const isReady = state.phase === 'round2' && state.board && state.board.categories.every((cat) => cat.clues.every((clue) => clue.used));
+  if (!isReady) { el.innerHTML = '<p>Bonus round becomes available after Round 2 is complete.</p>'; return; }
+  el.innerHTML = '<button id="startQuickMoneyBonus" type="button">Quick Money</button> <button id="startMinigameBonus" type="button">Random Minigame</button>';
+  document.getElementById('startQuickMoneyBonus').addEventListener('click', () => post('/host/start-bonus', { type: 'quickMoney' }));
+  document.getElementById('startMinigameBonus').addEventListener('click', () => post('/host/start-bonus', { type: 'minigame' }));
+}
+
+function renderMinigameHost() {
+  const el = document.getElementById('minigameHost');
+  if (!el) return;
+  if (state.phase !== 'minigame' || !state.selectedMinigame) { el.innerHTML = '<p>No minigame active.</p>'; return; }
+  const game = state.selectedMinigame;
+  let body = `<p><strong>${game.name}</strong> (${game.type})</p>`;
+  if (game.type === 'multipleChoice') {
+    body += (game.config.questions || []).map((q, i) => `<div><p>${i + 1}. ${q.prompt}</p>${(q.options || []).map((opt, oi) => `<button type="button" data-minigame-opt="${oi}" data-minigame-q="${i}">${opt}</button>`).join('')}</div>`).join('');
+  } else if (game.type === 'wordScramble') {
+    const puzzle = (game.config.puzzles || [])[state.minigameState?.currentPuzzleIndex || 0];
+    body += puzzle ? `<p>Scrambled: <strong>${puzzle.scrambled}</strong></p>` : '<p>No puzzle loaded.</p>';
+  }
+  body += `<div><input id="minigameWinner" placeholder="Winner name" /><input id="minigamePoints" type="number" placeholder="Points" /><button id="scoreMinigameBtn" type="button">Apply Minigame Score</button></div>`;
+  el.innerHTML = body;
+  const btn = document.getElementById('scoreMinigameBtn');
+  if (btn) btn.addEventListener('click', () => post('/host/minigame/score', { playerName: document.getElementById('minigameWinner').value, points: Number(document.getElementById('minigamePoints').value) }));
+}

@@ -100,6 +100,7 @@ function renderState(state) {
   } else {
     buzzInfo.textContent = t('player.buzzEnabled', 'Buzzing is enabled for this clue.');
   }
+  renderPlayerMinigame(state);
   if (playerStatusMessage) {
     buzzInfo.textContent = `${buzzInfo.textContent} ${playerStatusMessage}`;
   }
@@ -191,3 +192,19 @@ window.addEventListener('keydown', (event) => {
   if (!buzzButton.disabled) { event.preventDefault(); buzzButton.click(); }
 });
 loadTranslations('player');
+
+function renderPlayerMinigame(state) {
+  const wrap = document.getElementById('playerMinigameBody');
+  if (!wrap) return;
+  if (state.phase !== 'minigame' || !state.selectedMinigame) { wrap.textContent = 'No minigame active.'; return; }
+  const game = state.selectedMinigame;
+  if (game.type === 'multipleChoice') {
+    wrap.innerHTML = (game.config.questions || []).map((q, i) => `<p>${q.prompt}</p>${(q.options || []).map((o, oi) => `<button type="button" data-mg-q="${i}" data-mg-a="${oi}">${o}</button>`).join('')}`).join('');
+    wrap.querySelectorAll('button[data-mg-a]').forEach((btn) => btn.addEventListener('click', () => socket && socket.emit('player:minigame-answer', { questionIndex: Number(btn.dataset.mgQ), answerIndex: Number(btn.dataset.mgA) })));
+  } else if (game.type === 'wordScramble') {
+    const p = (game.config.puzzles || [])[state.minigameState?.currentPuzzleIndex || 0];
+    wrap.innerHTML = p ? `<p>Scrambled: <strong>${p.scrambled}</strong></p><input id="minigameGuess" /><button type="button" id="sendMinigameGuess">Submit Guess</button>` : 'No puzzle.';
+    const b = document.getElementById('sendMinigameGuess');
+    if (b) b.addEventListener('click', () => socket && socket.emit('player:minigame-answer', { guess: document.getElementById('minigameGuess').value }));
+  }
+}
